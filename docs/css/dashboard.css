@@ -121,13 +121,14 @@ section h2{font-size:16px;font-weight:600;margin-bottom:12px;color:var(--text-pr
 .scenario-bar-fill{position:absolute;height:100%;border-radius:3px;background:linear-gradient(90deg,#E74C3C,#F39C12,#27AE60)}
 .scenario-bar-marker{position:absolute;top:-3px;width:3px;height:12px;background:var(--text-primary);border-radius:2px}
 
-.forecast-sliders{display:flex;gap:16px;margin-bottom:12px;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);flex-wrap:wrap}
-.slider-group{flex:1;min-width:180px}
-.slider-group label{display:block;font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:4px}
-.slider-group input[type=range]{width:100%;accent-color:var(--accent);cursor:pointer}
-.slider-val{font-size:13px;font-weight:600;color:var(--text-primary);margin-top:2px}
-.slider-reset{padding:4px 10px;background:none;border:1px solid var(--border);border-radius:6px;font-size:10px;font-weight:500;cursor:pointer;color:var(--text-secondary);font-family:inherit;align-self:flex-end;margin-top:auto;transition:all .15s}
-.slider-reset:hover{background:var(--surface-hover)}
+.forecast-sliders{display:flex;gap:14px;margin-bottom:8px;padding:8px 14px;background:transparent;border:none;border-radius:var(--radius);flex-wrap:wrap;align-items:center}
+.slider-group{flex:1;min-width:160px}
+.slider-group label{display:block;font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;font-weight:500;margin-bottom:2px}
+.slider-group input[type=range]{width:100%;accent-color:#94A3B8;cursor:pointer;height:4px;opacity:.6;transition:opacity .15s}
+.slider-group input[type=range]:hover{opacity:1;accent-color:var(--accent)}
+.slider-val{font-size:11px;font-weight:500;color:var(--text-secondary);margin-top:1px}
+.slider-reset{padding:3px 8px;background:none;border:1px solid var(--border);border-radius:4px;font-size:9px;font-weight:500;cursor:pointer;color:var(--text-muted);font-family:inherit;align-self:center;transition:all .15s}
+.slider-reset:hover{background:var(--surface-hover);color:var(--text-secondary)}
 
 .forecast-method{background:#F5F5F5;border:1px solid #E0E0E0;border-radius:var(--radius);padding:12px 16px;margin-bottom:12px;font-size:12px;color:#555;line-height:1.7}
 .forecast-method strong{color:#333}
