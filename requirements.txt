@@ -4,3 +4,7 @@ pandas
 matplotlib
 seaborn
 plotly
+fastapi
+uvicorn
+duckdb
+anthropic

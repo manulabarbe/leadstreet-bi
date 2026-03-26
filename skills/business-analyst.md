@@ -4,133 +4,144 @@
 
 ### 1. Never Use Productive's Built-in Aggregates
 Productive has built-in reports, forecast fields, and computed metrics. **Do not use them.**
-All metrics are computed from the most granular raw data: individual `time_entries`, individual `bookings`, line-item `budgets`. We own every calculation.
+All metrics are computed from the most granular raw data: individual `time_entries`, deal-level financials. We own every calculation.
 
 ### 2. Always Confirm Metric Definitions With the User
-Before implementing ANY metric, **stop and ask the user** to confirm:
-- The exact formula
-- Which source fields to use
-- What edge cases to handle
-
-Productive fields are semantically ambiguous. "Revenue" could mean 5 different things. Don't guess.
+Before implementing ANY new metric, **stop and ask the user** to confirm.
+Productive fields are semantically ambiguous. Don't guess.
 
 ### 3. Document Every Confirmed Definition
-Once the user confirms a metric, add a `# METRIC DEFINITION — confirmed:` comment block in the code with the exact formula and date of confirmation.
+This file contains all confirmed definitions as of 2026-03-19.
 
 ---
 
-## Report Categories
+## How Productive Calculates Revenue
 
-### 1. Financial Reports
+Understanding this is critical for interpreting the numbers:
 
-| Metric | Description | Status |
-|--------|-------------|--------|
-| Revenue by month | Monthly revenue | **ASK USER: billable hours × rate? Which rate? Or invoiced amount?** |
-| Margin by month | Revenue minus costs | **ASK USER: cost = salary? Total cost? Overhead factor?** |
-| Year-to-date | Cumulative totals for current year | Derived from monthly figures |
-| Year-over-year | Current year vs previous year, same period | Compare month-by-month |
-| EOY Forecast | Projected end-of-year totals | Actuals (past) + bookings (future) |
+- **T&M services** (`billing_type_id=2`): Revenue = recognized hours x price/hour. Recognized as work is done.
+- **Fixed services** (`billing_type_id=1`): Revenue = fixed amount. Recognized proportionally as time/expenses are tracked and approved. Open budgets do NOT recognize remaining. Delivered budgets recognize remaining on end date.
+- **Non-billable** (`billing_type_id=3`): Revenue = EUR 0. Only costs tracked.
+- **Billable time** = hours that CAN be billed. **Recognized time** = hours that WILL generate revenue (respects budget caps). Difference: ~235h.
 
-**Forecast logic:**
-```
-EOY_projection = sum(actuals for past months) + sum(bookings for remaining months)
-```
-- Past months: use actual `time_entries` data
-- Future months: use `bookings` data
-- Current month: use actuals up to today + remaining bookings for the month
+LeadStreet settings: "Recognized when time/expenses are approved", open budgets = do not recognize remaining, delivered = end date.
 
-### 2. People Reports
+---
 
-| Metric | Description | Status |
-|--------|-------------|--------|
-| Billable utilisation % | How much of a person's time is billable | **ASK USER: denominator = total worked hours? Or available capacity?** |
-| Average cost per hour | Cost efficiency per person | **ASK USER: based on salary? Or budget rates?** |
-| Total worked hours | Sum of all time entries per person | `sum(time_entries.time) / 60` per person |
+## Confirmed Metric Definitions (2026-03-19)
 
-**Utilisation formula options (confirm with user):**
-```
-Option A: billable_hours / total_worked_hours × 100
-Option B: billable_hours / available_capacity_hours × 100
-```
+### 1. Financial Report
 
-### 3. Project Reports
+| Metric | Formula | Annotation |
+|--------|---------|------------|
+| **Revenue (Recognized)** | `deal.revenue / 100` from Productive | Reflects T&M + fixed-price recognition rules. Open budgets don't recognize remaining. |
+| **Staff Cost** | `time_entry.work_cost / 100` (salary-based) | Excludes overhead. Owners overridden to EUR 15K/month flat. |
+| **Gross Margin** | Revenue - Staff Cost | Named "Gross Margin (excl. overhead)" to clarify. |
+| **Gross Margin %** | Gross Margin / Revenue x 100 | |
+| **EOY Forecast** | Actuals YTD + (trailing 3-month avg x remaining months) | With H2 2025 seasonality adjustment. Early 2025 data unreliable. |
 
-| Metric | Description | Status |
-|--------|-------------|--------|
-| Overbudget flag | Whether project exceeds its budget | **ASK USER: compare hours or cost? What thresholds for amber/red?** |
-| ACPH per service type | Average cost per hour by service type | **ASK USER: cost source?** |
-| Budget burn rate | Speed of budget consumption | `hours_spent / budget_hours` or `cost_spent / budget_cost` |
+Revenue comes from deal-level data (not time entries). Cost comes from time entries (has the owner override applied).
 
-**Overbudget flag logic (confirm thresholds with user):**
-```
-usage_pct = actual_hours / budget_hours × 100
-🟢 Green:  usage_pct <= 80%
-🟡 Amber:  80% < usage_pct <= 100%
-🔴 Red:    usage_pct > 100%
-```
+### 2. People Report
 
-### 4. Client Reports
+| Metric | Formula | Annotation |
+|--------|---------|------------|
+| **Billable Utilisation %** | `billable_hours / total_tracked_hours` per person | Denominator = all logged time. Everyone logs billable + non-billable hours. Contractors may not track full days. |
+| **Avg Staff Cost/Hour** | `sum(work_cost) / sum(hours)` per person | Owners: EUR 15K/month / monthly hours. |
+| **Total Hours** | `sum(hours)` per person per period | |
+| **Team** | From teams API | Management, Contractos PH, Contractors BE, Contractors EU, Payroll BE, Finance |
 
-| Metric | Description | Status |
-|--------|-------------|--------|
-| Profitability by client | Revenue minus cost per client | **ASK USER: same revenue/cost definitions as financial report** |
-| Overbudget per client | Aggregated from project-level overbudget | Roll up project flags to client level |
+Owner override: Johan Vandecasteele, Johan Vantomme, Michel Antonise (agency owners) → EUR 15,000/month flat cost, distributed proportionally across their entries.
 
-**Client profitability** = sum of all project revenues for client - sum of all project costs for client.
+### 3. Project Report
 
-### 5. Hygiene Reports
+| Metric | Formula | Annotation |
+|--------|---------|------------|
+| **Budget Burn (hours)** | `worked_hours / budgeted_hours x 100` | |
+| **Budget Burn (EUR)** | `cost / budget_total x 100` | |
+| **Overbudget Flag** | Green <70%, Amber 70-100%, Red >100% | Dual check: hours AND EUR. Either triggers the flag. Early warning at 70%. |
+| **ACPH** | `staff_cost / total_hours` by service type | All 11 service types. |
+| **ARPH** | `revenue / billable_hours` by service type | Side-by-side with ACPH. Gap = margin per hour. |
 
-| Metric | Description | Status |
-|--------|-------------|--------|
-| Missing notes % | Time entries without a note, per month | `count(entries where note is null or empty) / total entries × 100` |
-| Trend | Is hygiene improving or degrading? | Month-over-month comparison |
+### 4. Client Report
 
-**Missing notes formula:**
-```python
-missing_pct = (
-    df[df["note"].isna() | (df["note"].str.strip() == "")]
-    .groupby("month").size()
-    / df.groupby("month").size()
-    * 100
-)
-```
+| Metric | Formula | Annotation |
+|--------|---------|------------|
+| **Revenue by client** | Sum of deal.revenue grouped by company | |
+| **Staff Cost by client** | Sum of work_cost from time entries grouped by client | |
+| **Gross Margin by client** | Revenue - Staff Cost per client | |
+| **Overbudget count** | # of amber + red flagged deals per client | |
+| **Client ACPH** | Staff cost / hours per client | |
+| **Client ARPH** | Revenue / billable hours per client | |
+
+### 5. Hygiene Report (full suite)
+
+| Check | Definition |
+|-------|-----------|
+| **Missing notes** | `note is null OR note.strip() == ""` — per month, per person |
+| **Zero-hour entries** | `time == 0` |
+| **Unapproved entries** | `approved == false` — blocks invoicing |
+| **Overspend tracking** | Non-billable entries on services with "overspend/overrun" in name |
+| **Missing service type** | Entries without `service_type` |
+| **Per-person breakdown** | All checks grouped by person — for coaching |
 
 ---
 
 ## Dimensions
 
-All reports should be sliceable by any combination of:
+All reports are sliceable by:
 
 | Dimension | Source |
 |-----------|--------|
-| Client | `projects.company` relationship |
-| Service type | `time_entries.service` relationship |
-| Person | `time_entries.person` relationship |
-| Month | Derived from `time_entries.date` |
-| Project | `time_entries.project` relationship |
+| Client | Via service → deal → company chain |
+| Service type | 11 types (from service_type relationship) |
+| Person | `time_entries.person` |
+| Team | Management, Contractos PH, Contractors BE, Contractors EU, Payroll BE, Finance |
+| Month | From `time_entries.date` |
+| Deal | `time_entries → service → deal` |
 
 ---
 
-## Data Granularity Requirements
+## Data Chain
 
-Always work with the most atomic records:
+Time entries don't link directly to projects. The chain is:
 
-| Data | Granularity | Endpoint |
-|------|-------------|----------|
-| Hours worked | Individual time entry | `time_entries` |
-| Future hours | Individual booking | `bookings` |
-| Budget amounts | Budget line item | `budgets` |
-| Service classification | Per service | `services` |
-| Person details | Per person | `people` |
-| Client grouping | Via project→company | `projects` + `companies` |
+```
+time_entry → service → deal → company (client)
+                     → service_type
+```
 
-**Never aggregate at the API level.** Fetch all individual records, store them, and aggregate in pandas.
+This enrichment is done in `transform.py` via `load_service_mapping()`.
 
 ---
 
-## Confirmed Metric Definitions
+## Service Types (from SOP)
 
-> This section is populated as the user confirms each metric definition.
-> Format: metric name, formula, source fields, confirmed date.
+| Service Type | Scope |
+|-------------|-------|
+| PERF - SEO, SAO, GTM, GA4, Cookie | Digital performance marketing |
+| DEV - HubSpot UI, Logic | Automation, logic, advanced HubSpot UI setup |
+| DEV - Website & HubSpot CMS | Front-end dev, landing pages, CMS |
+| DEV - Apps & Custom | Backend, API, integrations |
+| CON - Data Migration & Sync | CRM data imports, syncs, cleanup |
+| CON - Consultancy | Strategic/tactical advisory |
+| ONB - leadstreet | Direct HubSpot onboarding |
+| ONB - HubSpot ONB | HubSpot partner onboarding |
+| LS - Apps & Marketplace | Internal tools (Pocketknife, GEO Store) |
+| INTERN - Internal | Non-client ops, meetings, hiring, SOPs |
+| Expenses | Directly allocated client expenses |
 
-_No metrics confirmed yet. Run the pipeline and ask the user to define each metric before computing it._
+Important: Internal meetings ABOUT client work should be logged to the CLIENT, not INTERN.
+
+---
+
+## Team Structure
+
+| Team | Role | People |
+|------|------|--------|
+| Management | Agency owners + PM | Johan VDC, Johan VT, Michel, Hilde |
+| Contractos PH | Philippines contractors | 9 people |
+| Contractors BE | Belgian contractors | 3 people |
+| Contractors EU - not BE | EU contractors outside Belgium | 1 person (Diego) |
+| Payroll BE | Belgian payroll | 1 person (Laura) |
+| Finance, Admin, Support | Back office | Tim |

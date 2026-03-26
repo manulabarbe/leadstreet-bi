@@ -1,5 +1,20 @@
-.env
+# Credentials
+.env*
+
+# Data & output (regenerated)
 /data/
 /output/
+/test-results/
+
+# Python
 __pycache__/
 *.pyc
+
+# Tooling
+.gstack/
+.DS_Store
+
+# Backups (keep locally, don't commit)
+*.bak
+*.bak.*
+docs/index.html.pre-modular
