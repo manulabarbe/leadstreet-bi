@@ -496,6 +496,9 @@
     {label: "", cls: "pnl-spacer"},
     {label: "Direct costs", key: "direct_costs", cls: ""},
     {label: "", cls: "pnl-spacer"},
+    {label: "Delivery Margin", cls: "pnl-total", compute: function(A, B, i) { return (A.service_rev[i] || 0) + (A.people_cost[i] || 0) + (A.direct_costs[i] || 0); }, computeBudget: function(B, i) { return (B.service_rev[i] || 0) + (B.people_cost[i] || 0) + (B.direct_costs[i] || 0); }},
+    {label: "Delivery Margin %", cls: "pnl-pct", isPct: true, compute: function(A, B, i) { var s = A.service_rev[i] || 0; var c = Math.abs(A.people_cost[i] || 0) + Math.abs(A.direct_costs[i] || 0); return s > 0 ? (s - c) / s * 100 : 0; }, computeBudget: function(B, i) { var s = B.service_rev[i] || 0; var c = Math.abs(B.people_cost[i] || 0) + Math.abs(B.direct_costs[i] || 0); return s > 0 ? (s - c) / s * 100 : 0; }},
+    {label: "", cls: "pnl-spacer"},
     {label: "Gross Profit", key: "gross_profit", cls: "pnl-total"},
     {label: "Gross Profit %", key: "gross_profit_pct", cls: "pnl-pct", isPct: true},
     {label: "", cls: "pnl-spacer"},
@@ -828,9 +831,23 @@
         return;
       }
 
-      var forecast = row.key ? getForecast(row.key) : null;
-      var budgetRow = row.key && BUDGET[row.key] ? BUDGET[row.key] : null;
-      var actualRow = row.key && ACTUALS[row.key] ? ACTUALS[row.key] : null;
+      // Support computed rows (no key, derive values from compute functions)
+      var forecast, budgetRow, actualRow;
+      if (row.compute) {
+        // Build full forecast arrays once
+        var fcData = {};
+        ["service_rev","people_cost","direct_costs","turnover","other_rev"].forEach(function(k) { fcData[k] = getForecast(k); });
+        forecast = []; budgetRow = []; actualRow = [];
+        for (var ci = 0; ci < 12; ci++) {
+          forecast[ci] = ci < ACTUAL_MONTHS_COUNT ? row.compute(ACTUALS, BUDGET, ci) : row.compute(fcData, BUDGET, ci);
+          budgetRow[ci] = row.computeBudget(BUDGET, ci);
+          actualRow[ci] = ci < ACTUAL_MONTHS_COUNT ? row.compute(ACTUALS, BUDGET, ci) : null;
+        }
+      } else {
+        forecast = row.key ? getForecast(row.key) : null;
+        budgetRow = row.key && BUDGET[row.key] ? BUDGET[row.key] : null;
+        actualRow = row.key && ACTUALS[row.key] ? ACTUALS[row.key] : null;
+      }
       var isPct = row.isPct;
       var hig = row.key ? isHigherGood(row.key) : true;
 
@@ -856,9 +873,9 @@
           }
           td.className = cls.join(" ");
           td.textContent = fmtCell(val, isPct);
-          td.style.cursor = "pointer";
-          td.title = "Click to edit";
           if (row.key) {
+            td.style.cursor = "pointer";
+            td.title = "Click to edit";
             td.addEventListener("click", function() { onCellClick(td, row.key, monthIdx, isPct); });
           }
           tr.appendChild(td);

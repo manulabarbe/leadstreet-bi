@@ -45,7 +45,7 @@ def build_dashboard():
 
     # Get month range for date pickers
     months = sorted(r["month"] for r in data["financial_monthly"])
-    min_month = months[0][:7] if months else "2025-01"
+    min_month = "2025-01"  # reporting starts Jan 2025
     max_month = months[-1][:7] if months else "2026-12"
 
     # Get unique teams for filter
@@ -104,7 +104,10 @@ def build_dashboard():
   <nav>{nav_html}</nav>
   <div class="sidebar-footer">Last updated {today}</div>
 </div>
+<div class="sidebar-overlay" onclick="toggleSidebar()"></div>
 <div class="main">
+
+  <button class="sidebar-toggle" onclick="toggleSidebar()">&#9776;</button>
 
   <!-- Global filter bar -->
   <div class="filter-bar" id="global-filters">
@@ -124,27 +127,32 @@ def build_dashboard():
     <h2 style="display:flex;align-items:center;gap:12px">Executive Summary &mdash; 2026 <span style="font-size:11px;color:#94A3B8;font-weight:normal;margin-left:8px">YTD excl. current month</span></h2>
 
     <!-- P&L KPIs -->
-    <div class="kpi-strip" id="exec-pnl-kpis"></div>
+    <div id="exec-pnl-kpis" style="margin-bottom:14px"></div>
 
-    <!-- Forecast Sliders: What-if scenarios -->
-    <div class="forecast-sliders" id="exec-forecast-sliders" style="margin-top:4px">
-      <div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;width:100%">What-if Forecast &mdash; adjust to see impact on remaining months</div>
-      <div class="slider-group">
-        <label>Utilisation %</label>
-        <input type="range" id="exec-slider-util" min="30" max="90" step="1" oninput="updateExecSliders()">
-        <div class="slider-val" id="exec-slider-util-val"></div>
+    <!-- Playground toggle + Forecast Sliders -->
+    <div style="margin-top:4px">
+      <button id="exec-playground-toggle" class="playground-toggle" onclick="togglePlayground()">
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><polygon id="playground-arrow" points="0,0 10,5 0,10"/></svg>
+        Playground
+      </button>
+      <div id="exec-playground-panel" class="forecast-sliders" style="display:none;margin-top:4px">
+        <div class="slider-group">
+          <label>Utilisation %</label>
+          <input type="range" id="exec-slider-util" min="30" max="90" step="1" oninput="updateExecSliders()">
+          <div class="slider-val" id="exec-slider-util-val"></div>
+        </div>
+        <div class="slider-group">
+          <label>Avg Billable Rate (&euro;/hr)</label>
+          <input type="range" id="exec-slider-rate" min="50" max="200" step="1" oninput="updateExecSliders()">
+          <div class="slider-val" id="exec-slider-rate-val"></div>
+        </div>
+        <div class="slider-group">
+          <label>Monthly Team Hours</label>
+          <input type="range" id="exec-slider-hours" min="500" max="2500" step="10" oninput="updateExecSliders()">
+          <div class="slider-val" id="exec-slider-hours-val"></div>
+        </div>
+        <button class="slider-reset" onclick="resetExecSliders()">Reset to actuals</button>
       </div>
-      <div class="slider-group">
-        <label>Avg Billable Rate (&euro;/hr)</label>
-        <input type="range" id="exec-slider-rate" min="50" max="200" step="1" oninput="updateExecSliders()">
-        <div class="slider-val" id="exec-slider-rate-val"></div>
-      </div>
-      <div class="slider-group">
-        <label>Monthly Team Hours</label>
-        <input type="range" id="exec-slider-hours" min="500" max="2500" step="10" oninput="updateExecSliders()">
-        <div class="slider-val" id="exec-slider-hours-val"></div>
-      </div>
-      <button class="slider-reset" onclick="resetExecSliders()">Reset to actuals</button>
     </div>
     <div id="exec-slider-narrative" class="forecast-narrative" style="display:none"></div>
 
@@ -214,19 +222,18 @@ def build_dashboard():
     <div class="filter-bar"><label>Teams</label><button class="preset-btn" onclick="toggleAllFilters('team-filters',true)">All</button><div class="section-filters" id="team-filters">{team_checkboxes}</div></div>
     <div class="kpi-strip" id="kpi-people"></div>
     <div class="chart-grid">
+      <div class="chart-card chart-full"><div class="chart-card-header" style="display:inline">People Landscape</div><div style="display:inline-flex;gap:6px;margin-left:12px;vertical-align:middle;font-size:11px;color:var(--text-muted)"><span style="display:inline-flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:50%;background:#4CAF50;display:inline-block"></span>&ge;60%</span><span style="display:inline-flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:50%;background:#FF9800;display:inline-block"></span>40&ndash;60%</span><span style="display:inline-flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:50%;background:#F44336;display:inline-block"></span>&lt;40%</span><span style="margin-left:6px;display:inline-flex;align-items:center;gap:3px"><span style="width:6px;height:6px;border-radius:50%;border:1px solid #94a3b8;display:inline-block"></span><span style="width:14px;height:14px;border-radius:50%;border:1px solid #94a3b8;display:inline-block"></span> = revenue</span></div><div class="chart-desc">X = total hours worked, Y = utilisation %. Bubble size = revenue generated. <strong>Top-right = your workhorses</strong> (high volume &amp; high efficiency). Bottom-right = high capacity but underutilised.</div><div id="chart-ppl-hours" style="height:500px"></div></div>
       <div class="chart-card"><div class="chart-card-header">Utilisation by Month</div><div class="chart-desc">Team billable % per month vs target.</div><div id="chart-ppl-util-monthly" style="height:300px"></div></div>
       <div class="chart-card"><div class="chart-card-header">Effective Rate by Month</div><div class="chart-desc">Revenue &divide; total hours per month vs target.</div><div id="chart-ppl-effrate-monthly" style="height:300px"></div></div>
       <div class="chart-card"><div class="chart-card-header">Avg Rate by Month</div><div class="chart-desc">Revenue &divide; billable hours per month vs target.</div><div id="chart-ppl-rate-monthly" style="height:300px"></div></div>
-      <div class="chart-card"><div class="chart-card-header">Delivery Margin by Month (%)</div><div class="chart-desc">(Revenue &minus; staff cost) &divide; revenue per month.</div><div id="chart-ppl-margin-monthly" style="height:300px"></div></div>
-      <div class="chart-card"><div class="chart-card-header">Delivery Margin by Month (&euro;)</div><div class="chart-desc">Absolute delivery margin (revenue &minus; staff cost) per month.</div><div id="chart-ppl-margin-eur-monthly" style="height:300px"></div></div>
-      <div class="chart-card chart-full" style="padding:10px 16px 4px;display:flex;align-items:center;gap:16px"><div style="display:flex;align-items:center;gap:4px"><button class="yoy-toggle active" id="hm-view-individual" onclick="setPeopleHeatmapView('individual')">Individual</button><button class="yoy-toggle" id="hm-view-team" onclick="setPeopleHeatmapView('team')">Team</button></div><div id="heatmap-team-filter-wrapper"><label style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-right:8px">Filter team</label><select id="heatmap-team-select" onchange="renderAllPeopleHeatmaps()" style="padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;color:var(--text-primary);background:var(--surface)"><option value="">All Teams</option></select></div></div>
+      <div class="chart-card chart-full"><div class="chart-card-header" style="display:inline">Profitability Landscape</div><div style="display:inline-flex;gap:6px;margin-left:12px;vertical-align:middle;font-size:11px;color:var(--text-muted)"><span style="display:inline-flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:50%;background:#4CAF50;display:inline-block"></span>&ge;30%</span><span style="display:inline-flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:50%;background:#FF9800;display:inline-block"></span>0&ndash;30%</span><span style="display:inline-flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:50%;background:#F44336;display:inline-block"></span>&lt;0%</span><span style="margin-left:6px;display:inline-flex;align-items:center;gap:3px"><span style="width:6px;height:6px;border-radius:50%;border:1px solid #94a3b8;display:inline-block"></span><span style="width:14px;height:14px;border-radius:50%;border:1px solid #94a3b8;display:inline-block"></span> = hours</span></div><div class="chart-desc">X = revenue generated, Y = delivery margin %. Bubble size = total hours worked. <strong>Top-right = high revenue &amp; high margin.</strong> Bottom-right = big revenue but leaking margin.</div><div id="chart-ppl-profit" style="height:500px"></div></div>
+      <div class="chart-card chart-full" style="padding:10px 16px 4px;display:flex;align-items:center;gap:16px"><div style="display:flex;align-items:center;gap:4px"><button class="yoy-toggle" id="hm-view-individual" onclick="setPeopleHeatmapView('individual')">Individual</button><button class="yoy-toggle active" id="hm-view-team" onclick="setPeopleHeatmapView('team')">Team</button></div><div id="heatmap-team-filter-wrapper"><label style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-right:8px">Filter team</label><select id="heatmap-team-select" onchange="renderAllPeopleHeatmaps()" style="padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;color:var(--text-primary);background:var(--surface)"><option value="">All Teams</option></select></div></div>
       <div class="chart-card chart-full"><div class="chart-card-header" data-hm-title="Utilisation">Utilisation by Person &mdash; Monthly</div><div class="chart-desc">Billable &divide; total hours per month. Green &ge;80%, amber 40&ndash;80%, red &lt;40%. Click a person to open in Productive.</div><div id="chart-ppl-util-heatmap" style="height:450px"></div></div>
       <div class="chart-card chart-full"><div class="chart-card-header" data-hm-title="Effective Rate">Effective Rate by Person &mdash; Monthly</div><div class="chart-desc">Revenue &divide; total hours per month. Click a person to open in Productive.</div><div id="chart-ppl-effrate-heatmap" style="height:450px"></div></div>
       <div class="chart-card chart-full"><div class="chart-card-header" data-hm-title="Avg Cost/Hr">Avg Cost/Hr by Person &mdash; Monthly</div><div class="chart-desc">Staff cost &divide; total hours. Lower = cheaper. Red = expensive.</div><div id="chart-ppl-cost-heatmap" style="height:450px"></div></div>
       <div class="chart-card chart-full"><div class="chart-card-header" data-hm-title="Avg Rate">Avg Rate by Person &mdash; Monthly</div><div class="chart-desc">Revenue &divide; billable hours per month.</div><div id="chart-ppl-avgrate-heatmap" style="height:450px"></div></div>
       <div class="chart-card chart-full"><div class="chart-card-header" data-hm-title="Delivery Margin %">Delivery Margin % by Person &mdash; Monthly</div><div class="chart-desc">(Revenue &minus; staff cost) &divide; revenue per month.</div><div id="chart-ppl-margin-heatmap" style="height:450px"></div></div>
       <div class="chart-card chart-full"><div class="chart-card-header" data-hm-title="Delivery Margin &euro;">Delivery Margin &euro; by Person &mdash; Monthly</div><div class="chart-desc">Revenue &minus; staff cost per month (absolute).</div><div id="chart-ppl-margin-eur-heatmap" style="height:450px"></div></div>
-      <div class="chart-card chart-full"><div class="chart-card-header">People Landscape</div><div class="chart-desc">Total hours vs utilisation %. Bubble size = revenue. Top-right = high-volume, high-utilisation.</div><div id="chart-ppl-hours" style="height:450px"></div></div>
     </div>
     <div class="export-row"><button class="csv-btn" onclick="exportCSV('people')">Export People CSV</button></div>
   </section>
@@ -322,14 +329,14 @@ def build_dashboard():
     <div class="kpi-strip" id="kpi-hygiene"></div>
 
     <div class="tab-bar" id="hygiene-tabs">
-      <button class="tab-btn active" onclick="showHygieneTab('scorecard',this)">Note Compliance</button>
-      <button class="tab-btn" onclick="showHygieneTab('budgets',this)">Budget Audit</button>
+      <button class="tab-btn active" onclick="showHygieneTab('budgets',this)">Budget Audit</button>
       <button class="tab-btn" onclick="showHygieneTab('pso',this)">PSO Health</button>
       <button class="tab-btn" onclick="showHygieneTab('billability',this)">(Non)-Billability Checker</button>
+      <button class="tab-btn" onclick="showHygieneTab('scorecard',this)">Note Compliance</button>
     </div>
 
     <!-- Scorecard sub-tab -->
-    <div class="tab-content active" id="hyg-tab-scorecard">
+    <div class="tab-content" id="hyg-tab-scorecard">
       <div class="chart-grid">
         <div class="chart-card chart-full"><div class="chart-card-header">Note Compliance Trend</div><div id="chart-hyg-trend" style="height:280px"></div></div>
         <div class="chart-card chart-full"><div class="chart-card-header">Person Scorecard &mdash; Note Compliance by Month</div><div class="chart-desc">Green &ge;80%, amber 50&ndash;80%, red &lt;50%.</div><div id="chart-scorecard-heatmap" style="height:450px"></div></div>
@@ -337,16 +344,18 @@ def build_dashboard():
     </div>
 
     <!-- Budget Audit sub-tab -->
-    <div class="tab-content" id="hyg-tab-budgets">
+    <div class="tab-content active" id="hyg-tab-budgets">
       <div class="section-info">Deals with missing or placeholder budgets, ranked by hours worked. These create false overbudget flags and prevent meaningful budget tracking.</div>
       <div class="kpi-strip" id="kpi-budget-audit"></div>
       <div class="chart-grid">
-        <div class="chart-card chart-full"><div class="chart-card-header">Budget Audit &mdash; Top Deals Without Budget</div><div class="chart-desc">Deals with 0h/0&euro; budget but significant worked hours.</div><div id="chart-budget-audit" style="height:400px"></div></div>
-        <div class="chart-card chart-full"><div class="chart-card-header">Placeholder Budgets (&le;2h)</div><div class="chart-desc">Deals with tiny budgets that are clearly placeholders. Cause extreme overrun %.</div><div id="chart-budget-placeholder" style="height:400px"></div></div>
-        <div class="chart-card chart-full"><div class="chart-card-header">Missing Overspend Service</div><div class="chart-desc">Scoped T&amp;M budgets (excl. retainers) without a non-billable overspend service. Click to open in Productive.</div><div id="chart-missing-overspend" style="height:400px"></div></div>
-        <div class="chart-card chart-full"><div class="chart-card-header">Missing Service Type</div><div class="chart-desc">Entries without a service type, breaking service-level analysis.</div><div id="chart-missing-stype" style="height:300px"></div></div>
-        <div class="chart-card chart-full"><div class="chart-card-header">Closed Budgets with Post-Close Activity</div><div class="chart-desc">Time logged after the budget was closed. Click to open in Productive.</div><div id="chart-closed-activity" style="height:350px"></div></div>
-        <div class="chart-card chart-full"><div class="chart-card-header">Stale Budgets &mdash; Likely Ready to Deliver</div><div class="chart-desc">Open budgets with no recent activity. Shows last activity date. Click to open in Productive.</div><div id="chart-stale-budgets" style="height:350px"></div></div>
+        <div class="chart-card chart-full"><div class="chart-card-header">Consider Adding an Overspend Service</div><div class="chart-desc">Scoped T&amp;M budgets (excl. retainers) without a non-billable overspend service. Click to fix in Productive.</div><div id="chart-missing-overspend" style="height:400px"></div></div>
+        <div class="chart-card chart-full"><div class="chart-card-header">Consider Assigning a Service Type</div><div class="chart-desc">Entries without a service type, breaking service-level analysis. Click to fix in Productive.</div><div id="chart-missing-stype" style="height:300px"></div></div>
+        <div class="chart-card chart-full"><div class="chart-card-header">Consider Switching These T&amp;M Services to Hours</div><div class="chart-desc">Time &amp; Materials services using &ldquo;pieces&rdquo; instead of &ldquo;hours&rdquo; for quantity. Click to fix in Productive.</div><div id="chart-wrong-unit"></div></div>
+        <div class="chart-card chart-full"><div class="chart-card-header">Consider Setting These Overspend Lines to Non-Billable</div><div class="chart-desc">Overspend or out-of-scope service lines that should be Non-billable but are set to T&amp;M or Fixed. Click to fix in Productive.</div><div id="chart-wrong-billing"></div></div>
+        <div class="chart-card chart-full"><div class="chart-card-header">Consider Closing These Budgets</div><div class="chart-desc">Open budgets with no recent activity. Shows last activity date. Click to open in Productive.</div><div id="chart-stale-budgets" style="height:350px"></div></div>
+        <div class="chart-card chart-full"><div class="chart-card-header">Consider Setting a Budget for These Deals</div><div class="chart-desc">Deals with 0h/0&euro; budget but significant worked hours. Click to fix in Productive.</div><div id="chart-budget-audit" style="height:400px"></div></div>
+        <div class="chart-card chart-full"><div class="chart-card-header">Consider Updating These Placeholder Budgets</div><div class="chart-desc">Deals with tiny budgets (&le;2h) that are clearly placeholders. Click to fix in Productive.</div><div id="chart-budget-placeholder" style="height:400px"></div></div>
+        <div class="chart-card chart-full"><div class="chart-card-header">Consider Reviewing Time on These Closed Budgets</div><div class="chart-desc">Time logged after the budget was closed. Click to open in Productive.</div><div id="chart-closed-activity" style="height:350px"></div></div>
       </div>
     </div>
 
@@ -414,6 +423,7 @@ def build_dashboard():
       <div class="chart-grid">
         <div class="chart-card chart-full"><div class="chart-card-header">Pricing Power Map &mdash; Volume vs Margin per Hour</div><div class="chart-desc">Top-right = golden services (high volume AND high margin). Bottom-right = lots of work but thin margins &mdash; reprice or automate.</div><div id="chart-analysis-pricing-power" style="height:450px"></div></div>
         <div class="chart-card chart-full"><div class="chart-card-header">Cost-Revenue Spread &mdash; ACPH vs Effective Rate</div><div class="chart-desc">Services below the 45&deg; diagonal lose money on every hour. Distance above = profit per hour.</div><div id="chart-analysis-cost-rev-spread" style="height:450px"></div></div>
+        <div class="chart-card chart-full"><div class="chart-card-header">Overspend by Service Type</div><div class="chart-desc">Which service types regularly blow their budgets? Top-right = high volume AND frequent overspend. Bubble size = total overspend (&euro;). Excludes contingent and open-ended (&lt;2h budgeted) deals.</div><div id="chart-analysis-stype-overspend" style="height:450px"></div></div>
       </div>
     </div>
     <div class="tab-content" id="analysis-tab-cross">

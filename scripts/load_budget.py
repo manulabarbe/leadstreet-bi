@@ -20,8 +20,17 @@ ONEDRIVE_BASE = Path.home() / (
     "2. Finance/1. Budget&Forecast"
 )
 
-BUDGET_2026_FILE = ONEDRIVE_BASE / "2026" / "260302  Leadstreet Budget 2026.xlsx"
-BUDGET_2025_FILE = ONEDRIVE_BASE / "2025" / "20250505 Leadstreet Budget 2025 v5.xlsx"
+
+def _find_latest(directory: Path, pattern: str) -> Path | None:
+    """Find the file with the highest date-prefix matching the glob pattern."""
+    candidates = sorted(directory.glob(pattern), reverse=True)
+    if candidates:
+        print(f"  [auto-discover] Using: {candidates[0].name}")
+    return candidates[0] if candidates else None
+
+
+BUDGET_2026_FILE = _find_latest(ONEDRIVE_BASE / "2026", "*Leadstreet Budget 2026*.xlsx")
+BUDGET_2025_FILE = _find_latest(ONEDRIVE_BASE / "2025", "*Leadstreet Budget 2025*.xlsx")
 
 
 def load_budget_2026(path: Path | None = None) -> dict | None:

@@ -14,7 +14,11 @@ __pycache__/
 .gstack/
 .DS_Store
 
+# Logs (daily refresh)
+/logs/
+
 # Backups (keep locally, don't commit)
 *.bak
-*.bak.*
+*.bak*
 docs/index.html.pre-modular
+node_modules/

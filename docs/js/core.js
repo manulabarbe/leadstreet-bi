@@ -48,8 +48,8 @@
 
   function prodDealLink(name, projectId, dealId, maxLen) {
     var label = maxLen && name.length > maxLen ? name.substring(0,maxLen-3)+"..." : name;
-    if (projectId && dealId) {
-      return '<a href="'+PROD_BASE+'/projects/'+projectId+'/budgets/'+dealId+'" target="_blank" style="color:inherit;text-decoration:none;border-bottom:1px dotted #94A3B8" title="Open in Productive">'+label+'</a>';
+    if (dealId) {
+      return '<a href="'+PROD_BASE+'/financials/budgets/d/deal/'+dealId+'/services" target="_blank" style="color:inherit;text-decoration:none;border-bottom:1px dotted #94A3B8" title="Open in Productive">'+label+'</a>';
     }
     return label;
   }
@@ -275,6 +275,11 @@
     document.querySelectorAll(".nav-item").forEach(function(n){ n.classList.remove("active"); });
     btn.classList.add("active");
     activeSection = id;
+    // Close sidebar on mobile after navigation
+    if (window.innerWidth <= 768) {
+      document.querySelector('.sidebar').classList.remove('open');
+      document.querySelector('.sidebar-overlay').classList.remove('active');
+    }
     setTimeout(function(){ window.dispatchEvent(new Event("resize")); }, 50);
     if (id === "analysis") applyFilters();
   }
@@ -425,7 +430,14 @@
   Dashboard.utils.renderCliPage = renderCliPage;
   Dashboard.utils.getFilters = getFilters;
 
+  // === SIDEBAR TOGGLE (mobile) ===
+  function toggleSidebar() {
+    document.querySelector('.sidebar').classList.toggle('open');
+    document.querySelector('.sidebar-overlay').classList.toggle('active');
+  }
+
   // Functions called from HTML onclick handlers MUST be global
+  window.toggleSidebar = toggleSidebar;
   window.applyFilters = applyFilters;
   window.showSection = showSection;
   window.setPreset = setPreset;

@@ -10,7 +10,7 @@
   var DATA = D.DATA;
 
   // --- Module state ---
-  var heatmapViewMode = "individual"; // "individual" or "team"
+  var heatmapViewMode = "team"; // "individual" or "team"
 
   // --- Helper: get budget rate ---
   function getBudgetRate() {
@@ -65,6 +65,18 @@
     var sortedHours = scData.map(function(d) { return d.x; }).sort(function(a,b) { return a-b; });
     var medianHours = sortedHours[Math.floor(sortedHours.length / 2)] || 0;
 
+    // Build per-person utilisation target lookup from budget
+    var personUtilTarget = {};
+    if (DATA.budget_people) {
+      DATA.budget_people.filter(function(p){return p.year===2026&&p.productive_name;}).forEach(function(p){
+        personUtilTarget[p.productive_name] = (p.billability_target||0) * 100;
+      });
+    }
+
+    // Compute team averages for tooltip context
+    var teamAvgUtil = scData.reduce(function(s,d){return s+d.y;},0) / scData.length;
+    var teamAvgEffRate = scData.reduce(function(s,d){return s+d.effRate;},0) / scData.length;
+
     d3c.scatter("chart-ppl-hours", scData, {
       xField: "x", yField: "y",
       sizeField: "revenue",
@@ -73,14 +85,40 @@
       },
       textField: "name",
       tooltipFn: function(d) {
-        return "<div style='font-weight:600;margin-bottom:4px;font-size:13px'>" + d.name + "</div>" +
-          "<div style='display:grid;grid-template-columns:auto auto;gap:2px 12px;color:#5F6B7A'>" +
-          "<span>Utilisation</span><span style='font-weight:600;color:#1A1D21'>" + d.y.toFixed(1) + "%</span>" +
-          "<span>Total Hours</span><span style='font-weight:500'>" + d3c.fmtNum(d.hours) + "h</span>" +
-          "<span>Billable</span><span style='font-weight:500'>" + d3c.fmtNum(d.billable) + "h</span>" +
-          "<span>Revenue</span><span style='font-weight:500'>\u20AC" + d3c.fmtNum(Math.round(d.revenue)) + "</span>" +
-          "<span>Eff Rate</span><span style='font-weight:500'>\u20AC" + d.effRate.toFixed(0) + "/hr</span>" +
-          "</div>";
+        var margin = d.revenue - d.cost;
+        var marginPct = d.revenue > 0 ? margin / d.revenue * 100 : 0;
+        var nonBillable = d.hours - d.billable;
+        var myUtilTarget = personUtilTarget[d.name] != null ? personUtilTarget[d.name] : utilTarget;
+        var utilDelta = d.y - myUtilTarget;
+        var utilDeltaSign = utilDelta >= 0 ? "+" : "";
+        var utilDeltaColor = utilDelta >= 0 ? "#4CAF50" : "#F44336";
+        var effRateDelta = d.effRate - teamAvgEffRate;
+        var effRateDeltaSign = effRateDelta >= 0 ? "+" : "";
+        var effRateDeltaColor = effRateDelta >= 0 ? "#4CAF50" : "#F44336";
+        var costPerBillable = d.billable > 0 ? d.cost / d.billable : 0;
+
+        var t = "";
+        // Header
+        t += "<div style='font-weight:700;font-size:13px;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid #E2E8F0'>" + d.name + "</div>";
+        // Utilisation section
+        t += "<div style='font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#94A3B8;margin-bottom:3px'>Utilisation</div>";
+        t += "<div style='display:grid;grid-template-columns:auto auto;gap:1px 12px;margin-bottom:8px'>";
+        var targetLabel = personUtilTarget[d.name] != null ? myUtilTarget.toFixed(0) + "% target" : "team target";
+        t += "<span style='color:#5F6B7A'>Utilisation</span><span style='font-weight:600'>" + d.y.toFixed(1) + "% <span style='font-size:10px;color:" + utilDeltaColor + "'>" + utilDeltaSign + utilDelta.toFixed(0) + "pp vs " + targetLabel + "</span></span>";
+        t += "<span style='color:#5F6B7A'>Total hours</span><span style='font-weight:500'>" + d3c.fmtNum(d.hours) + "h</span>";
+        t += "<span style='color:#5F6B7A'>Billable</span><span style='font-weight:500'>" + d3c.fmtNum(d.billable) + "h</span>";
+        t += "<span style='color:#5F6B7A'>Non-billable</span><span style='font-weight:500'>" + d3c.fmtNum(nonBillable) + "h</span>";
+        t += "</div>";
+        // Financial section
+        t += "<div style='font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#94A3B8;margin-bottom:3px'>Financial</div>";
+        t += "<div style='display:grid;grid-template-columns:auto auto;gap:1px 12px;margin-bottom:8px'>";
+        t += "<span style='color:#5F6B7A'>Revenue</span><span style='font-weight:500'>\u20AC" + d3c.fmtNum(Math.round(d.revenue)) + "</span>";
+        t += "<span style='color:#5F6B7A'>Staff cost</span><span style='font-weight:500'>\u20AC" + d3c.fmtNum(Math.round(d.cost)) + "</span>";
+        t += "<span style='color:#5F6B7A'>Delivery margin</span><span style='font-weight:600;" + (marginPct < 30 ? "color:#F44336" : marginPct < 50 ? "color:#FF9800" : "color:#4CAF50") + "'>" + marginPct.toFixed(0) + "% (\u20AC" + d3c.fmtNum(Math.round(margin)) + ")</span>";
+        t += "<span style='color:#5F6B7A'>Effective rate</span><span style='font-weight:500'>\u20AC" + d.effRate.toFixed(0) + "/hr <span style='font-size:10px;color:" + effRateDeltaColor + "'>" + effRateDeltaSign + "\u20AC" + Math.abs(effRateDelta).toFixed(0) + " vs avg</span></span>";
+        t += "<span style='color:#5F6B7A'>Cost per billable hr</span><span style='font-weight:500'>\u20AC" + costPerBillable.toFixed(0) + "/hr</span>";
+        t += "</div>";
+        return t;
       },
       xLabel: "Total Hours",
       yLabel: "Utilisation (%)",
@@ -91,14 +129,111 @@
         {axis: "y", value: utilTarget, color: "#CBD5E1", dash: "4,3", label: "Target " + utilTarget.toFixed(0) + "%"}
       ],
       quadrants: [
-        {x: 0.02, y: 0.98, text: "Low Hours, Low Util", anchor: "start"},
-        {x: 0.98, y: 0.98, text: "High Hours, Low Util", anchor: "end"},
-        {x: 0.02, y: 0.02, text: "Low Hours, High Util", anchor: "start"},
-        {x: 0.98, y: 0.02, text: "Workhorses", anchor: "end"}
+        {x: 0.02, y: 0.98, text: "\u26A0 Low volume, underutilised", anchor: "start"},
+        {x: 0.98, y: 0.98, text: "\u26A0 Capacity but not billing", anchor: "end"},
+        {x: 0.02, y: 0.02, text: "\u2714 Efficient (grow volume?)", anchor: "start"},
+        {x: 0.98, y: 0.02, text: "\u2B50 Workhorses", anchor: "end"}
       ],
-      minSize: 8, maxSize: 28,
+      minSize: 8, maxSize: 30,
       margin: {top: 20, right: 40, bottom: 50, left: 60},
-      height: 450
+      height: 500
+    });
+  }
+
+  // --- Profitability Landscape: Revenue vs Delivery Margin % scatter ---
+  function buildProfitabilityLandscape(data) {
+    var byPerson = {};
+    data.forEach(function(r) {
+      if (!byPerson[r.person_name]) byPerson[r.person_name] = {name:r.person_name,hours:0,billable:0,revenue:0,cost:0};
+      byPerson[r.person_name].hours += r.hours||0;
+      byPerson[r.person_name].billable += r.billable_hours||0;
+      byPerson[r.person_name].revenue += r.revenue||0;
+      byPerson[r.person_name].cost += r.staff_cost||0;
+    });
+
+    var scData = Object.values(byPerson).filter(function(p) {
+      return p.hours > 0 && p.revenue > 0;
+    }).map(function(p) {
+      var margin = p.revenue - p.cost;
+      var marginPct = p.revenue > 0 ? margin / p.revenue * 100 : 0;
+      var util = p.hours > 0 ? p.billable / p.hours * 100 : 0;
+      var effRate = p.hours > 0 ? p.revenue / p.hours : 0;
+      return {
+        x: p.revenue,
+        y: marginPct,
+        hours: p.hours,
+        name: p.name,
+        billable: p.billable,
+        revenue: p.revenue,
+        cost: p.cost,
+        margin: margin,
+        util: util,
+        effRate: effRate
+      };
+    });
+
+    if (scData.length === 0) return;
+
+    var sortedRev = scData.map(function(d) { return d.x; }).sort(function(a,b) { return a-b; });
+    var medianRev = sortedRev[Math.floor(sortedRev.length / 2)] || 0;
+
+    var teamAvgMarginPct = (function() {
+      var totRev = scData.reduce(function(s,d){return s+d.revenue;},0);
+      var totCost = scData.reduce(function(s,d){return s+d.cost;},0);
+      return totRev > 0 ? (totRev - totCost) / totRev * 100 : 0;
+    })();
+
+    d3c.scatter("chart-ppl-profit", scData, {
+      xField: "x", yField: "y",
+      sizeField: "hours",
+      colorFn: function(d) {
+        return d.y >= 30 ? C.onTrack : d.y >= 0 ? C.warning : C.overbudget;
+      },
+      textField: "name",
+      tooltipFn: function(d) {
+        var nonBillable = d.hours - d.billable;
+        var marginColor = d.y >= 30 ? "#4CAF50" : d.y >= 0 ? "#FF9800" : "#F44336";
+        var marginDelta = d.y - teamAvgMarginPct;
+        var marginDeltaSign = marginDelta >= 0 ? "+" : "";
+        var marginDeltaColor = marginDelta >= 0 ? "#4CAF50" : "#F44336";
+
+        var t = "";
+        t += "<div style='font-weight:700;font-size:13px;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid #E2E8F0'>" + d.name + "</div>";
+        t += "<div style='font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#94A3B8;margin-bottom:3px'>Margin</div>";
+        t += "<div style='display:grid;grid-template-columns:auto auto;gap:1px 12px;margin-bottom:8px'>";
+        t += "<span style='color:#5F6B7A'>Delivery margin</span><span style='font-weight:700;color:" + marginColor + "'>" + d.y.toFixed(1) + "% <span style='font-size:10px;color:" + marginDeltaColor + "'>" + marginDeltaSign + marginDelta.toFixed(0) + "pp vs team</span></span>";
+        t += "<span style='color:#5F6B7A'>Margin absolute</span><span style='font-weight:500;" + (d.margin < 0 ? "color:#F44336" : "") + "'>\u20AC" + d3c.fmtNum(Math.round(d.margin)) + "</span>";
+        t += "<span style='color:#5F6B7A'>Revenue</span><span style='font-weight:500'>\u20AC" + d3c.fmtNum(Math.round(d.revenue)) + "</span>";
+        t += "<span style='color:#5F6B7A'>Staff cost</span><span style='font-weight:500'>\u20AC" + d3c.fmtNum(Math.round(d.cost)) + "</span>";
+        t += "</div>";
+        t += "<div style='font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:#94A3B8;margin-bottom:3px'>Operational</div>";
+        t += "<div style='display:grid;grid-template-columns:auto auto;gap:1px 12px'>";
+        t += "<span style='color:#5F6B7A'>Total hours</span><span style='font-weight:500'>" + d3c.fmtNum(d.hours) + "h</span>";
+        t += "<span style='color:#5F6B7A'>Billable</span><span style='font-weight:500'>" + d3c.fmtNum(d.billable) + "h</span>";
+        t += "<span style='color:#5F6B7A'>Non-billable</span><span style='font-weight:500'>" + d3c.fmtNum(nonBillable) + "h</span>";
+        t += "<span style='color:#5F6B7A'>Utilisation</span><span style='font-weight:500'>" + d.util.toFixed(1) + "%</span>";
+        t += "<span style='color:#5F6B7A'>Effective rate</span><span style='font-weight:500'>\u20AC" + d.effRate.toFixed(0) + "/hr</span>";
+        t += "</div>";
+        return t;
+      },
+      xLabel: "Revenue (\u20AC)",
+      yLabel: "Delivery Margin (%)",
+      xFormat: function(d) { return "\u20AC" + d3c.fmtNum(Math.round(d)); },
+      yFormat: function(d) { return d + "%"; },
+      refLines: [
+        {axis: "x", value: medianRev, color: "#CBD5E1", dash: "4,3", label: "Median rev"},
+        {axis: "y", value: 0, color: "#F44336", dash: "6,3", label: "Break-even"},
+        {axis: "y", value: teamAvgMarginPct, color: "#CBD5E1", dash: "4,3", label: "Team avg " + teamAvgMarginPct.toFixed(0) + "%"}
+      ],
+      quadrants: [
+        {x: 0.02, y: 0.98, text: "Low revenue, low margin", anchor: "start"},
+        {x: 0.98, y: 0.98, text: "\u26A0 Revenue leak", anchor: "end"},
+        {x: 0.02, y: 0.02, text: "Niche but profitable", anchor: "start"},
+        {x: 0.98, y: 0.02, text: "\u2B50 Stars", anchor: "end"}
+      ],
+      minSize: 8, maxSize: 30,
+      margin: {top: 20, right: 40, bottom: 50, left: 60},
+      height: 500
     });
   }
 
@@ -558,8 +693,6 @@
       var utilVals = months.map(function(m) { return monthMap[m].hours > 0 ? monthMap[m].billable/monthMap[m].hours*100 : null; });
       var effRateVals = months.map(function(m) { return monthMap[m].hours > 0 ? monthMap[m].rev/monthMap[m].hours : null; });
       var arphVals = months.map(function(m) { return monthMap[m].billable > 0 ? monthMap[m].rev/monthMap[m].billable : null; });
-      var marginVals = months.map(function(m) { return monthMap[m].rev > 0 ? (monthMap[m].rev-monthMap[m].cost)/monthMap[m].rev*100 : null; });
-      var marginEurVals = months.map(function(m) { return monthMap[m].rev - monthMap[m].cost; });
 
       var utilTarget = 57;
       if (DATA.budget_people) {
@@ -599,8 +732,6 @@
       monthlyBar("chart-ppl-util-monthly", utilVals, utilTarget, {yTitle:"Utilisation %", fmt:function(v){return v.toFixed(1)+"%";}});
       monthlyBar("chart-ppl-effrate-monthly", effRateVals, effTarget, {yTitle:"Effective Rate (\u20AC/hr)", fmt:function(v){return "\u20AC"+Math.round(v);}});
       monthlyBar("chart-ppl-rate-monthly", arphVals, rateTarget, {yTitle:"Avg Rate (\u20AC/hr)", fmt:function(v){return "\u20AC"+Math.round(v);}});
-      monthlyBar("chart-ppl-margin-monthly", marginVals, null, {yTitle:"Delivery Margin %", fmt:function(v){return v.toFixed(1)+"%";}});
-      monthlyBar("chart-ppl-margin-eur-monthly", marginEurVals, null, {yTitle:"Delivery Margin (\u20AC)", fmt:function(v){return "\u20AC"+d3c.fmtNum(Math.round(v));}});
     })();
 
     // Populate heatmap team dropdown
@@ -619,6 +750,7 @@
 
     renderAllPeopleHeatmaps();
     buildPeopleLandscape(pplData);
+    buildProfitabilityLandscape(pplData);
   });
 
 })(window.Dashboard);

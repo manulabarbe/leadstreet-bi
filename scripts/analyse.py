@@ -1471,13 +1471,18 @@ def get_dashboard_data(te: pd.DataFrame, deals: pd.DataFrame) -> dict[str, list[
     from collections import defaultdict
     _contingent_remaining = defaultdict(float)  # company_name → remaining €
     _contingent_company_set = set()
-    _CONTINGENT_EXCEL = os.path.join(
+    _contingent_dir = os.path.join(
         os.path.expanduser("~"),
         "Library/CloudStorage/OneDrive-Gedeeldebibliotheken-T-WESSC°BV/"
         "Storage-Meja - Documenten/Meja/Always On Group/Leadstreet/"
-        "2. Finance/2. Reporting/2026/Contingenten/"
-        "260326 2026-2025-2024-2023-2022-2021-contingenten.xlsx"
-    )
+        "2. Finance/2. Reporting/2026/Contingenten/")
+    import glob as _glob
+    _candidates = sorted(_glob.glob(os.path.join(_contingent_dir, "*contingenten*.xlsx")), reverse=True)
+    _CONTINGENT_EXCEL = _candidates[0] if _candidates else None
+    if _CONTINGENT_EXCEL:
+        print(f"  [auto-discover] Contingenten: {os.path.basename(_CONTINGENT_EXCEL)}")
+    else:
+        print("  [warning] No contingenten Excel found in", _contingent_dir)
     try:
         import openpyxl
         _wb = openpyxl.load_workbook(_CONTINGENT_EXCEL, data_only=True)
@@ -1687,12 +1692,42 @@ def get_dashboard_data(te: pd.DataFrame, deals: pd.DataFrame) -> dict[str, list[
     ).round(1)
     flaggable["overspend_cost"] = (flaggable["cost"] - flaggable["budget_total"]).clip(lower=0).round(0)
     flaggable["overspend_hours"] = (flaggable["worked_hours"] - flaggable["budgeted_hours"]).clip(lower=0).round(1)
+    # Enrich with service_type from budget_map (deal ID → service_type)
+    if budget_map:
+        flaggable["service_type"] = flaggable["id"].astype(str).map(
+            lambda did: budget_map.get(did, {}).get("service_type", "(no type)")
+        )
+    else:
+        flaggable["service_type"] = "(no type)"
     ob_cols = ["name", "company_name", "company_id", "project_id", "id",
                "flag", "hours_burn_pct", "cost_burn_pct",
                "worked_hours", "budgeted_hours", "revenue", "cost",
-               "budget_total", "profit", "overspend_cost", "overspend_hours"]
+               "budget_total", "profit", "overspend_cost", "overspend_hours",
+               "service_type", "is_contingent", "delivered_on"]
     ob_cols = [c for c in ob_cols if c in flaggable.columns]
     overbudget = flaggable[ob_cols]
+
+    # --- Service type overbudget summary (for Analysis chart) ---
+    # Exclude contingent deals and placeholder budgets (open-ended mitigation)
+    ob_for_stype = flaggable[
+        (~flaggable.get("is_contingent", pd.Series(False, index=flaggable.index)))
+        & (flaggable["budgeted_hours"] > 2)
+    ].copy()
+    stype_ob = ob_for_stype.groupby("service_type").agg(
+        deal_count=("id", "count"),
+        red_count=("flag", lambda x: (x == "RED").sum()),
+        amber_count=("flag", lambda x: (x == "AMBER").sum()),
+        total_overspend_cost=("overspend_cost", "sum"),
+        total_overspend_hours=("overspend_hours", "sum"),
+        avg_hours_burn=("hours_burn_pct", "mean"),
+        total_revenue=("revenue", "sum"),
+    ).reset_index()
+    stype_ob["pct_overbudget"] = (stype_ob["red_count"] / stype_ob["deal_count"] * 100).round(1)
+    stype_ob["pct_at_risk"] = ((stype_ob["red_count"] + stype_ob["amber_count"]) / stype_ob["deal_count"] * 100).round(1)
+    stype_ob["avg_hours_burn"] = stype_ob["avg_hours_burn"].round(1)
+    stype_ob["total_overspend_cost"] = stype_ob["total_overspend_cost"].round(0)
+    stype_ob["total_overspend_hours"] = stype_ob["total_overspend_hours"].round(1)
+    stype_ob["total_revenue"] = stype_ob["total_revenue"].round(0)
 
     # --- Client summary ---
     deal_fin = client_budgets.groupby("company_name").agg(
@@ -1790,9 +1825,12 @@ def get_dashboard_data(te: pd.DataFrame, deals: pd.DataFrame) -> dict[str, list[
     else:
         billability_entries = pd.DataFrame()
 
-    # --- Budget audit (deals with missing/placeholder budgets) ---
+    # --- Budget audit (deals with missing/placeholder budgets — open only) ---
     budget_audit = []
     for _, row in client_budgets.iterrows():
+        # Skip closed/delivered deals — not actionable
+        if row.get("closed_at") or row.get("delivered_on"):
+            continue
         bh = row.get("budgeted_hours", 0) or 0
         bt = row.get("budget_total", 0) or 0
         wh = row.get("worked_hours", 0) or 0
@@ -1830,8 +1868,10 @@ def get_dashboard_data(te: pd.DataFrame, deals: pd.DataFrame) -> dict[str, list[
     no_stype = te[te["service_type"].isna()]
     if not no_stype.empty:
         for deal_name, grp in no_stype.groupby("deal_name"):
+            did = str(grp["deal_id"].iloc[0]) if "deal_id" in grp.columns and grp["deal_id"].notna().any() else ""
             missing_stype.append({
                 "deal_name": deal_name or "(no deal)",
+                "deal_id": did,
                 "entries": len(grp),
                 "hours": round(grp["hours"].sum(), 1),
             })
@@ -1941,10 +1981,13 @@ def get_dashboard_data(te: pd.DataFrame, deals: pd.DataFrame) -> dict[str, list[
             })
         pso_health.sort(key=lambda x: (-x["issue_count"], -x["burn_pct"]))
 
-    # --- Missing Overspend Service (non-PSO, non-retainer budgets) ---
+    # --- Missing Overspend Service (non-PSO, non-retainer, open budgets only) ---
     missing_overspend = []
     if services_df is not None:
         for _, deal in client_budgets.iterrows():
+            # Skip closed/delivered deals — not actionable
+            if deal.get("closed_at") or deal.get("delivered_on"):
+                continue
             did = deal.get("id", "")
             name = str(deal.get("name", ""))
             name_lower = name.lower()
@@ -2075,6 +2118,55 @@ def get_dashboard_data(te: pd.DataFrame, deals: pd.DataFrame) -> dict[str, list[
                             "warning" if (burn_pct > 70 or days_inactive > 90) else "info",
             })
     stale_budgets.sort(key=lambda x: (-x["burn_pct"], -x["days_inactive"]))
+
+    # --- Wrong quantity unit: T&M services using "pieces" instead of "hours" ---
+    wrong_unit_services = []
+    if services_df is not None:
+        for _, deal in client_budgets.iterrows():
+            if deal.get("closed_at") or deal.get("delivered_on"):
+                continue
+            did = deal.get("id", "")
+            deal_svcs = svcs_by_deal.get(did, [])
+            for s in deal_svcs:
+                if s.get("deleted_at"):
+                    continue
+                # T&M (billing_type_id=2) should use hours (unit_id=1), not pieces (unit_id=2)
+                if s.get("billing_type_id") == 2 and s.get("unit_id") == 2:
+                    wrong_unit_services.append({
+                        "deal_name": str(deal.get("name", "")),
+                        "service_name": str(s.get("name", "")),
+                        "deal_id": str(did),
+                        "company_name": str(deal.get("company_name", "")),
+                        "quantity": str(s.get("quantity", "")),
+                    })
+        wrong_unit_services.sort(key=lambda x: x["deal_name"])
+
+    # --- Overspend/OOS lines with wrong billing type ---
+    wrong_billing_services = []
+    oos_keywords = ["overspend", "overspent", "out of scope", "out-of-scope", "oos", "over spend"]
+    if services_df is not None:
+        for _, deal in client_budgets.iterrows():
+            if deal.get("closed_at") or deal.get("delivered_on"):
+                continue
+            did = deal.get("id", "")
+            deal_svcs = svcs_by_deal.get(did, [])
+            for s in deal_svcs:
+                if s.get("deleted_at"):
+                    continue
+                sname = str(s.get("name", "")).lower()
+                if any(kw in sname for kw in oos_keywords):
+                    if s.get("billing_type_id") != 3:  # not non-billable
+                        billing_label = {1: "Fixed", 2: "Time & Materials"}.get(
+                            s.get("billing_type_id"), f"Unknown ({s.get('billing_type_id')})"
+                        )
+                        wrong_billing_services.append({
+                            "deal_name": str(deal.get("name", "")),
+                            "service_name": str(s.get("name", "")),
+                            "deal_id": str(did),
+                            "company_name": str(deal.get("company_name", "")),
+                            "billing_type": billing_label,
+                        })
+        wrong_billing_services.sort(key=lambda x: x["deal_name"])
 
     # --- Data health summary counts ---
     total_entries = len(te)
@@ -2451,6 +2543,7 @@ def get_dashboard_data(te: pd.DataFrame, deals: pd.DataFrame) -> dict[str, list[
         "service_type_monthly": to_records(stype_monthly),
         "deals_summary": to_records(deals_summary),
         "overbudget": to_records(overbudget),
+        "stype_overbudget": to_records(stype_ob),
         "clients": to_records(clients),
         "client_monthly": to_records(client_monthly),
         "hygiene_monthly": to_records(hygiene_monthly),
@@ -2475,6 +2568,8 @@ def get_dashboard_data(te: pd.DataFrame, deals: pd.DataFrame) -> dict[str, list[
         "missing_overspend": missing_overspend,
         "closed_with_activity": closed_with_activity,
         "stale_budgets": stale_budgets,
+        "wrong_unit_services": wrong_unit_services,
+        "wrong_billing_services": wrong_billing_services,
         "deal_monthly": to_records(deal_monthly),
     }
 

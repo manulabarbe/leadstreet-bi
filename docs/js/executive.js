@@ -172,11 +172,11 @@
     var opsRevBudgetYTD = sumArr(B.service_rev, 0, n);
     var opsRevVarPct = opsRevBudgetYTD > 0 ? (opsRevActual - opsRevBudgetYTD) / opsRevBudgetYTD * 100 : null;
 
-    // --- Delivery Margin % = (service_rev - |people_cost|) / service_rev ---
-    var peopleCostActual = Math.abs(sumArr(A.people_cost, 0, n));
-    var deliveryMarginPct = opsRevActual > 0 ? (opsRevActual - peopleCostActual) / opsRevActual * 100 : 0;
-    var peopleCostBudget = Math.abs(sumArr(B.people_cost, 0, n));
-    var deliveryMarginBudget = opsRevBudgetYTD > 0 ? (opsRevBudgetYTD - peopleCostBudget) / opsRevBudgetYTD * 100 : 0;
+    // --- Delivery Margin = service_rev - people_cost - direct_costs (matches budget Excel) ---
+    var deliveryCostActual = Math.abs(sumArr(A.people_cost, 0, n)) + Math.abs(sumArr(A.direct_costs, 0, n));
+    var deliveryMarginPct = opsRevActual > 0 ? (opsRevActual - deliveryCostActual) / opsRevActual * 100 : 0;
+    var deliveryCostBudget = Math.abs(sumArr(B.people_cost, 0, n)) + Math.abs(sumArr(B.direct_costs, 0, n));
+    var deliveryMarginBudget = opsRevBudgetYTD > 0 ? (opsRevBudgetYTD - deliveryCostBudget) / opsRevBudgetYTD * 100 : 0;
     var deliveryMarginDelta = deliveryMarginPct - deliveryMarginBudget;
 
     // --- HubSpot Commission: actual vs forecast ---
@@ -195,27 +195,28 @@
     var ebitdaVarPct = ebitdaBudgetYTD > 0 ? (ebitdaActual - ebitdaBudgetYTD) / ebitdaBudgetYTD * 100 : null;
 
     // FY forecasts — use slider override if provided
-    var fyRevForecast, fyEbitdaForecast, fyOpsRevForecast, fyPeopleCostForecast;
+    var fyRevForecast, fyEbitdaForecast, fyOpsRevForecast, fyDeliveryCostForecast;
     var commFc = getForecast("other_rev");
     var costFc = getForecast("people_cost");
     var opexFc = getForecast("total_opex");
+    var directFc = getForecast("direct_costs");
     if (overrideSvcRev != null) {
       fyRevForecast = sumArr(A.turnover, 0, n);
       fyEbitdaForecast = sumArr(A.reported_ebitda, 0, n);
       fyOpsRevForecast = sumArr(A.service_rev, 0, n);
-      fyPeopleCostForecast = Math.abs(sumArr(A.people_cost, 0, n));
+      fyDeliveryCostForecast = Math.abs(sumArr(A.people_cost, 0, n)) + Math.abs(sumArr(A.direct_costs, 0, n));
       for (var i = n; i < 12; i++) {
         var turnover_i = overrideSvcRev + commFc[i];
         fyRevForecast += turnover_i;
         fyEbitdaForecast += turnover_i + costFc[i] + opexFc[i]; // costs are negative
         fyOpsRevForecast += overrideSvcRev;
-        fyPeopleCostForecast += Math.abs(costFc[i]);
+        fyDeliveryCostForecast += Math.abs(costFc[i]) + Math.abs(directFc[i]);
       }
     } else {
       fyRevForecast = sumArr(getForecast("turnover"), 0, 12);
       fyEbitdaForecast = sumArr(getForecast("reported_ebitda"), 0, 12);
       fyOpsRevForecast = sumArr(getForecast("service_rev"), 0, 12);
-      fyPeopleCostForecast = Math.abs(sumArr(getForecast("people_cost"), 0, 12));
+      fyDeliveryCostForecast = Math.abs(sumArr(getForecast("people_cost"), 0, 12)) + Math.abs(sumArr(getForecast("direct_costs"), 0, 12));
     }
     var fyRevBudget = sumArr(B.turnover, 0, 12);
     var fyRevVarPct = fyRevBudget > 0 ? (fyRevForecast - fyRevBudget) / fyRevBudget * 100 : null;
@@ -225,12 +226,18 @@
     // FY Ops Revenue + Delivery Margin forecasts
     var fyOpsRevBudget = sumArr(B.service_rev, 0, 12);
     var fyOpsRevVarPct = fyOpsRevBudget > 0 ? (fyOpsRevForecast - fyOpsRevBudget) / fyOpsRevBudget * 100 : null;
-    var fyDeliveryMarginPct = fyOpsRevForecast > 0 ? (fyOpsRevForecast - fyPeopleCostForecast) / fyOpsRevForecast * 100 : 0;
-    var fyPeopleCostBudget = Math.abs(sumArr(B.people_cost, 0, 12));
-    var fyDeliveryMarginBudget = fyOpsRevBudget > 0 ? (fyOpsRevBudget - fyPeopleCostBudget) / fyOpsRevBudget * 100 : 0;
+    var fyDeliveryMarginPct = fyOpsRevForecast > 0 ? (fyOpsRevForecast - fyDeliveryCostForecast) / fyOpsRevForecast * 100 : 0;
+    var fyDeliveryCostBudget = Math.abs(sumArr(B.people_cost, 0, 12)) + Math.abs(sumArr(B.direct_costs, 0, 12));
+    var fyDeliveryMarginBudget = fyOpsRevBudget > 0 ? (fyOpsRevBudget - fyDeliveryCostBudget) / fyOpsRevBudget * 100 : 0;
     var fyDeliveryMarginDelta = fyDeliveryMarginPct - fyDeliveryMarginBudget;
 
     var scenarioTag = overrideSvcRev != null ? " (Scenario)" : "";
+
+    // --- Absolute margins ---
+    var deliveryMarginAbs = opsRevActual - deliveryCostActual;
+    var deliveryMarginAbsBudget = opsRevBudgetYTD - deliveryCostBudget;
+    var fyDeliveryMarginAbs = fyOpsRevForecast - fyDeliveryCostForecast;
+    var fyDeliveryMarginAbsBudget = fyOpsRevBudget - fyDeliveryCostBudget;
 
     // --- Profit Margin % (EBITDA as % of total revenue) ---
     var profitMarginPct = revActual > 0 ? ebitdaActual / revActual * 100 : 0;
@@ -240,14 +247,13 @@
     // --- FY Profit Margin % ---
     var fyProfitMarginPct = fyRevForecast > 0 ? fyEbitdaForecast / fyRevForecast * 100 : 0;
     var fyProfitMarginBudget = fyRevBudget > 0 ? fyEbitdaBudget / fyRevBudget * 100 : 0;
-    var fyProfitMarginDelta = fyProfitMarginPct - fyProfitMarginBudget;
 
-    // --- HubSpot Commission delta color ---
-    var commDColor = u.deltaColor(commVarPct);
-    var commDSign = commVarPct > 0 ? "+" : "";
-    var commDText = commVarPct !== null ? commDSign + commVarPct.toFixed(1) + "%" : "";
+    // --- HubSpot Commission ---
+    var commGap = commActual - commBudgetYTD;
+    var commGapColor = u.deltaColor(commVarPct != null ? commVarPct : 0);
+    var commGapSign = commGap >= 0 ? "+" : "";
 
-    // Build KPI strip
+    // Build KPI strip — 6 simple cards (3 per row) + commission text line
     var el = document.getElementById("exec-pnl-kpis");
     if (!el) return;
 
@@ -255,40 +261,65 @@
       // --- Row 1: Total ---
       '<div class="kpi-strip-label">Total (incl. commission)</div>' +
       '<div class="kpi-strip-row">' +
-        kpiCard("Revenue " + infoIcon("Total accounting turnover: service revenue + HubSpot commission."), u.fmtEur(revActual), "Budget: " + u.fmtEur(revBudgetYTD), revVarPct, "vs budget") +
-        kpiCard("Profit Margin " + infoIcon("EBITDA as % of total revenue."), profitMarginPct.toFixed(1) + "%", "Budget: " + profitMarginBudget.toFixed(1) + "%", profitMarginDelta, "pp vs budget", false, "pp") +
-        kpiCard("FY Revenue" + scenarioTag + " " + infoIcon("Full-year revenue forecast. Use Playground to model scenarios."), u.fmtEur(fyRevForecast), "Budget: " + u.fmtEur(fyRevBudget), fyRevVarPct, "vs budget") +
-        kpiCard("FY Profit Margin" + scenarioTag + " " + infoIcon("Full-year EBITDA margin forecast."), fyProfitMarginPct.toFixed(1) + "%", "Budget: " + fyProfitMarginBudget.toFixed(1) + "%", fyProfitMarginDelta, "pp vs budget", false, "pp") +
+        kpiCard("Revenue", infoIcon("Total accounting turnover: service revenue + HubSpot commission."),
+          u.fmtEur(revActual), u.fmtEur(revBudgetYTD), revActual - revBudgetYTD, revVarPct) +
+        kpiCard("Profit Margin", infoIcon("EBITDA: earnings before interest, taxes, depreciation and amortization."),
+          u.fmtEur(ebitdaActual), u.fmtEur(ebitdaBudgetYTD), ebitdaActual - ebitdaBudgetYTD, ebitdaVarPct) +
+        kpiCard("Profit Margin %", infoIcon("EBITDA as % of total revenue."),
+          profitMarginPct.toFixed(1) + "%", profitMarginBudget.toFixed(1) + "%", null, null, profitMarginDelta) +
       '</div>' +
       // --- Row 2: Delivery ---
       '<div class="kpi-strip-label">Delivery (service revenue only)</div>' +
       '<div class="kpi-strip-row">' +
-        kpiCard("Ops Revenue " + infoIcon("Service revenue only, excl. HubSpot commission."), u.fmtEur(opsRevActual), "Budget: " + u.fmtEur(opsRevBudgetYTD), opsRevVarPct, "vs budget") +
-        kpiCard("Delivery Margin " + infoIcon("(Service rev \u2212 people cost) / service rev. On worked hours only."), deliveryMarginPct.toFixed(1) + "%", "Budget: " + deliveryMarginBudget.toFixed(1) + "%", deliveryMarginDelta, "pp vs budget", false, "pp") +
-        kpiCard("FY Ops Revenue" + scenarioTag + " " + infoIcon("Full-year service revenue forecast."), u.fmtEur(fyOpsRevForecast), "Budget: " + u.fmtEur(fyOpsRevBudget), fyOpsRevVarPct, "vs budget") +
-        kpiCard("FY Delivery Margin" + scenarioTag + " " + infoIcon("Full-year delivery margin forecast."), fyDeliveryMarginPct.toFixed(1) + "%", "Budget: " + fyDeliveryMarginBudget.toFixed(1) + "%", fyDeliveryMarginDelta, "pp vs budget", false, "pp") +
+        kpiCard("Ops Revenue", infoIcon("Service revenue only, excl. HubSpot commission."),
+          u.fmtEur(opsRevActual), u.fmtEur(opsRevBudgetYTD), opsRevActual - opsRevBudgetYTD, opsRevVarPct) +
+        kpiCard("Delivery Margin", infoIcon("Service rev \u2212 people cost \u2212 direct costs. Matches budget Excel."),
+          u.fmtEur(deliveryMarginAbs), u.fmtEur(deliveryMarginAbsBudget), deliveryMarginAbs - deliveryMarginAbsBudget, null,
+          null, (deliveryMarginAbs - deliveryMarginAbsBudget) / Math.abs(deliveryMarginAbsBudget) * 100) +
+        kpiCard("Delivery Margin %", infoIcon("(Service rev \u2212 people cost \u2212 direct costs) / service rev. Matches budget Excel."),
+          deliveryMarginPct.toFixed(1) + "%", deliveryMarginBudget.toFixed(1) + "%", null, null, deliveryMarginDelta) +
       '</div>' +
-      // --- HubSpot Commission inline ---
-      '<div class="kpi-commission-inline">' +
-        '<span class="comm-label">HubSpot Commission</span>' +
-        '<span class="comm-value">' + u.fmtEur(commActual) + '</span>' +
-        '<span class="comm-sub">Forecast: ' + u.fmtEur(commBudgetYTD) + '</span>' +
-        (commDText ? '<span class="comm-delta" style="color:' + commDColor + '">' + commDText + ' vs forecast</span>' : '') +
+      // --- HubSpot Commission text line ---
+      '<div class="kpi-commission-line">HubSpot Commission: <strong>' + u.fmtEur(commActual) + '</strong> ' +
+        '<span class="comm-sub">Budget: ' + u.fmtEur(commBudgetYTD) + '</span> ' +
+        '<span style="color:' + commGapColor + ';font-weight:600">' + commGapSign + u.fmtEur(commGap) + '</span>' +
       '</div>';
   }
 
-  // Helper to build a single KPI card HTML
-  function kpiCard(label, value, sub, delta, deltaLabel, isMajor, deltaSuffix) {
-    var dColor = u.deltaColor(delta);
-    var dSign = delta > 0 ? "+" : "";
-    var suffix = deltaSuffix || "%";
-    var dText = delta !== null && delta !== undefined ? dSign + delta.toFixed(1) + suffix : "";
-    var majorCls = isMajor ? " kpi-item-major" : "";
-    return '<div class="kpi-item' + majorCls + '">' +
-      '<div class="kpi-label">' + label + '</div>' +
+  // Simple KPI card: value, budget, absolute gap, % delta (or pp delta for margin %)
+  function kpiCard(label, icon, value, budget, absGap, pctDelta, ppDelta, pctDelta2) {
+    // Gap line
+    var gapHtml = "";
+    if (absGap !== null && absGap !== undefined) {
+      var gs = absGap >= 0 ? "+" : "";
+      var gc = u.deltaColor(absGap >= 0 ? 1 : (Math.abs(absGap) > 50000 ? -20 : -5));
+      gapHtml = '<span class="kpi-gap-val" style="color:' + gc + '">' + gs + u.fmtEur(absGap) + '</span>';
+    }
+    // % delta
+    var deltaHtml = "";
+    if (pctDelta !== null && pctDelta !== undefined) {
+      var dc = u.deltaColor(pctDelta);
+      var ds = pctDelta >= 0 ? "+" : "";
+      deltaHtml = ' <span style="color:' + dc + '">' + ds + pctDelta.toFixed(1) + '%</span>';
+    }
+    // pp delta (for margin % cards)
+    if (ppDelta !== null && ppDelta !== undefined) {
+      var dc2 = u.deltaColor(ppDelta);
+      var ds2 = ppDelta >= 0 ? "+" : "";
+      gapHtml = '<span class="kpi-gap-val" style="color:' + dc2 + '">' + ds2 + ppDelta.toFixed(1) + 'pp</span>';
+    }
+    // secondary % (e.g. delivery margin abs gap as %)
+    if (pctDelta2 !== null && pctDelta2 !== undefined) {
+      var dc3 = u.deltaColor(pctDelta2);
+      var ds3 = pctDelta2 >= 0 ? "+" : "";
+      deltaHtml = ' <span style="color:' + dc3 + '">' + ds3 + pctDelta2.toFixed(1) + '%</span>';
+    }
+
+    return '<div class="kpi-item">' +
+      '<div class="kpi-label">' + label + ' ' + icon + '</div>' +
       '<div class="kpi-value">' + value + '</div>' +
-      '<div class="kpi-sub">' + sub + '</div>' +
-      (dText ? '<div class="kpi-delta" style="color:' + dColor + '">' + dText + ' <span class="kpi-delta-label">' + (deltaLabel || "") + '</span></div>' : '') +
+      '<div class="kpi-sub">Budget: ' + budget + '</div>' +
+      '<div class="kpi-gap">' + gapHtml + deltaHtml + ' <span class="kpi-gap-label">vs budget</span></div>' +
     '</div>';
   }
 

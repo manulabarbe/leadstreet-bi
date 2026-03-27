@@ -171,7 +171,13 @@
           "<div style='display:grid;grid-template-columns:auto auto;gap:2px 12px;color:#5F6B7A'>" +
           "<span>Hours</span><span style='font-weight:600;color:#1A1D21'>" + r.hours.toFixed(1) + "h</span>" +
           "<span>Entries</span><span style='font-weight:500'>" + r.entries + "</span>" +
+          (r.deal_id ? "<div style='margin-top:4px;font-style:italic;color:#94A3B8'>Click to open in Productive</div>" : "") +
           "</div>";
+      },
+      onClick: function(r){
+        if (r.deal_id) {
+          window.open(PROD_BASE+"/financials/budgets/d/deal/"+r.deal_id+"/services", "_blank");
+        }
       },
       xLabel: xLabel,
       margin: {top: 24, right: 70, bottom: 36, left: 300},
@@ -379,6 +385,49 @@
       barHeight: 24
     });
   }
+
+  var _svcIssueData = {};
+  function renderServiceIssues(containerId, data, page) {
+    var el = document.getElementById(containerId);
+    if (!el) return;
+    if (!data || data.length === 0) {
+      el.innerHTML = "<div style='padding:24px;color:#94A3B8;text-align:center'>No issues found</div>";
+      return;
+    }
+    _svcIssueData[containerId] = data;
+    page = page || 1;
+    var ps = 10;
+    var start = (page - 1) * ps;
+    var end = Math.min(start + ps, data.length);
+    var tp = Math.ceil(data.length / ps);
+    var html = '<table style="width:100%;border-collapse:collapse;font-size:13px">';
+    html += '<thead><tr style="border-bottom:2px solid #E5E7EB;text-align:left">';
+    html += '<th style="padding:8px 6px">Deal</th>';
+    html += '<th>Service</th>';
+    html += '<th>Client</th>';
+    html += '<th style="text-align:right;padding-right:12px">Issue</th>';
+    html += '</tr></thead><tbody>';
+    data.slice(start, end).forEach(function(r) {
+      var issue = r.billing_type ? r.billing_type + " (should be Non-billable)" : "pcs (should be hrs)";
+      var link = r.deal_id ? PROD_BASE+"/financials/budgets/d/deal/"+r.deal_id+"/services" : "";
+      html += '<tr style="cursor:'+(link?"pointer":"default")+';border-bottom:1px solid #F0F2F5"'+(link?' onclick="window.open(\''+link+'\',\'_blank\')"':'')+' title="'+(link?"Click to open in Productive":"")+'">';
+      html += '<td style="padding:8px 6px;font-weight:500;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (r.deal_name||"") + '</td>';
+      html += '<td style="color:#374151;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (r.service_name||"") + '</td>';
+      html += '<td style="color:#6B7280">' + (r.company_name||"") + '</td>';
+      html += '<td style="text-align:right;padding-right:12px;font-weight:600;color:#dc2626">' + issue + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    if (tp > 1) {
+      html += '<div style="margin-top:8px;font-size:12px;color:#6B7280">Page ' + page + '/' + tp + ' (' + data.length + ' issues)';
+      if (page > 1) html += ' <button style="padding:2px 8px;font-size:11px;cursor:pointer" onclick="pageSvcIssues(\'' + containerId + '\',' + (page-1) + ')">Prev</button>';
+      if (page < tp) html += ' <button style="padding:2px 8px;font-size:11px;cursor:pointer" onclick="pageSvcIssues(\'' + containerId + '\',' + (page+1) + ')">Next</button>';
+      html += '</div>';
+    }
+    el.innerHTML = html;
+  }
+  function pageSvcIssues(id, page) { renderServiceIssues(id, _svcIssueData[id], page); }
+  window.pageSvcIssues = pageSvcIssues;
 
   // === BILLABILITY TAB ===
   function buildBillabilityPersonList(entries, scData) {
@@ -636,6 +685,8 @@
     renderIssueList("chart-missing-stype", mst, "Hours (missing service type)");
     renderClosedActivity("chart-closed-activity", cwa);
     renderStaleBudgets("chart-stale-budgets", stale);
+    renderServiceIssues("chart-wrong-unit", DATA.wrong_unit_services || []);
+    renderServiceIssues("chart-wrong-billing", DATA.wrong_billing_services || []);
 
     // PSO Health tab — split active vs closed
     var pso = DATA.pso_health || [];
@@ -653,14 +704,14 @@
     var totalWorked = pso.reduce(function(s,r){return s+(r.worked_hours||0)},0);
     var totalBudgeted = pso.reduce(function(s,r){return s+(r.budgeted_hours||0)},0);
     var scopeCreepHours = psoOverbudget.reduce(function(s,r){return s+Math.max(0,r.worked_hours-r.budgeted_hours)},0);
-    var avgCostHr = totalWorked > 0 ? totalPsoCost / totalWorked : 0;
-    var opportunityCost = Math.round(scopeCreepHours * avgCostHr);
+    var avgPsoRate = totalWorked > 0 ? totalPsoRev / totalWorked : 0;
+    var lostRevenue = Math.round(scopeCreepHours * avgPsoRate);
     u.setKPIs("kpi-pso", [
       {label:"Active PSOs", value:u.fmt(psoActive.length), sub:u.fmt(activeOverbudget.length)+" overbudget", color:activeOverbudget.length>0?C.overbudget:""},
       {label:"Closed PSOs", value:u.fmt(psoClosed.length), sub:u.fmt(psoClosed.filter(function(r){return r.burn_pct>100}).length)+" were overbudget"},
       {label:"Hours ROI", value:hoursROI.toFixed(1)+"x", sub:"\u20AC"+u.fmt(Math.round(totalPsoRev))+" rev / \u20AC"+u.fmt(Math.round(totalPsoCost))+" hours cost", color:hoursROI>=1.5?C.onTrack:hoursROI>=1?C.warning:C.overbudget},
-      {label:"Scope Creep", value:u.fmt(Math.round(scopeCreepHours))+"h", sub:u.fmt(Math.round(totalWorked))+"h worked / "+u.fmt(Math.round(totalBudgeted))+"h budgeted", color:scopeCreepHours>0?C.overbudget:""},
-      {label:"Lost Opportunity", value:"\u20AC"+u.fmt(opportunityCost), sub:"Cost of "+u.fmt(Math.round(scopeCreepHours))+"h over budget @ \u20AC"+Math.round(avgCostHr)+"/h", color:opportunityCost>0?C.overbudget:C.onTrack}
+      {label:"Hours Worked for Free", value:u.fmt(Math.round(scopeCreepHours))+"h", sub:u.fmt(Math.round(totalWorked))+"h worked / "+u.fmt(Math.round(totalBudgeted))+"h budgeted", color:scopeCreepHours>0?C.overbudget:""},
+      {label:"Lost Revenue", value:"\u20AC"+u.fmt(lostRevenue), sub:u.fmt(Math.round(scopeCreepHours))+"h \u00D7 \u20AC"+Math.round(avgPsoRate)+"/h avg PSO rate", color:lostRevenue>0?C.overbudget:C.onTrack}
     ]);
 
     // Helper to setup a pso chart pair (burn + issues)

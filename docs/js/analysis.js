@@ -490,6 +490,97 @@
       height: 400
     });
 
+    // CHART: Overspend by Service Type (date-filtered via deal_monthly, same as Scope Creep Radar)
+    var obDealMonthly = u.filterByMonth(DATA.deal_monthly || [], "month", f.startMonth, f.endMonth);
+    var obActiveDeals = {};
+    obDealMonthly.forEach(function(r) { obActiveDeals[r.deal_name] = true; });
+    var obFiltered = (DATA.overbudget || []).filter(function(d) {
+      return obActiveDeals[d.name] && (d.budgeted_hours||0) > 2 && !d.is_contingent;
+    });
+    // Aggregate by service_type
+    // Build effective rate lookup from svcData (already computed above from date-filtered service_type_monthly)
+    var svcEffRate = {};
+    svcData.forEach(function(s) { svcEffRate[s.service_type] = s.eff_rate || 0; });
+    var stypeObMap = {};
+    obFiltered.forEach(function(d) {
+      var st = d.service_type || "(no type)";
+      if (!stypeObMap[st]) stypeObMap[st] = {service_type:st, deal_count:0, red:0, amber:0, overspend_cost:0, overspend_hours:0, revenue:0, worked_hours:0, budgeted_hours:0};
+      var s = stypeObMap[st];
+      s.deal_count++;
+      if (d.flag === "RED") s.red++;
+      if (d.flag === "AMBER") s.amber++;
+      s.overspend_cost += d.overspend_cost || 0;
+      s.overspend_hours += d.overspend_hours || 0;
+      s.revenue += d.revenue || 0;
+      s.worked_hours += d.worked_hours || 0;
+      s.budgeted_hours += d.budgeted_hours || 0;
+    });
+    var stypeOb = Object.values(stypeObMap).filter(function(s) { return s.deal_count >= 2; });
+    stypeOb.forEach(function(s) {
+      s.pct_overbudget = s.deal_count > 0 ? Math.round(s.red / s.deal_count * 1000) / 10 : 0;
+      s.pct_at_risk = s.deal_count > 0 ? Math.round((s.red + s.amber) / s.deal_count * 1000) / 10 : 0;
+      s.eff_rate = svcEffRate[s.service_type] || 0;
+      // Lost revenue = overspend hours that could have been billed at the service type's effective rate
+      s.lost_revenue = Math.round(s.overspend_hours * s.eff_rate);
+      // Effective rate if scoped correctly: revenue / budgeted_hours (what it would be without overruns)
+      s.eff_rate_if_scoped = s.budgeted_hours > 0 ? s.revenue / s.budgeted_hours : 0;
+      // Actual effective rate across these deals: revenue / worked_hours
+      s.eff_rate_actual = s.worked_hours > 0 ? s.revenue / s.worked_hours : 0;
+      // Rate dilution: how much the effective rate dropped due to overspend
+      s.rate_dilution = s.eff_rate_if_scoped - s.eff_rate_actual;
+    });
+    var sobData = stypeOb.map(function(s) {
+      return {
+        x: s.deal_count, y: s.pct_overbudget,
+        name: s.service_type,
+        _dealCount: s.deal_count,
+        _redCount: s.red,
+        _pctAtRisk: s.pct_at_risk,
+        _overspendHours: s.overspend_hours,
+        _lostRevenue: s.lost_revenue,
+        _effRateActual: s.eff_rate_actual,
+        _rateDilution: s.rate_dilution,
+        _revenue: s.revenue,
+        overspend: s.overspend_hours
+      };
+    });
+    d3c.scatter("chart-analysis-stype-overspend", sobData, {
+      xField: "x", yField: "y",
+      sizeField: "overspend",
+      colorFn: function(d) { return d.y > 50 ? C.overbudget : d.y > 25 ? C.warning : C.onTrack; },
+      textField: "name",
+      tooltipFn: function(d) {
+        var dilSign = d._rateDilution >= 0 ? "-" : "+";
+        var dilColor = d._rateDilution > 0 ? C.overbudget : "#5F6B7A";
+        return "<div style='font-weight:600;margin-bottom:6px;font-size:13px'>" + d.name + "</div>" +
+          "<div style='display:grid;grid-template-columns:auto auto;gap:4px 14px;color:#5F6B7A;font-size:12px'>" +
+          "<span style='font-weight:600;color:#374151;grid-column:1/-1;margin-top:2px'>Scope</span>" +
+          "<span>Deals tracked</span><span style='font-weight:600'>" + d._dealCount + "</span>" +
+          "<span>Overbudget</span><span style='font-weight:600;color:" +
+            (d.y > 50 ? C.overbudget : d.y > 25 ? C.warning : C.onTrack) + "'>" +
+            d._redCount + " of " + d._dealCount + " (" + d.y.toFixed(0) + "%)</span>" +
+          "<span>At risk (incl. amber)</span><span>" + d._pctAtRisk.toFixed(0) + "%</span>" +
+          "<span style='font-weight:600;color:#374151;grid-column:1/-1;margin-top:6px'>Financial impact</span>" +
+          "<span>Hours worked for free</span><span style='font-weight:600;color:" + C.overbudget + "'>" + d3c.fmtNum(d._overspendHours) + "h</span>" +
+          "<span>Revenue left on table</span><span style='font-weight:600;color:" + C.overbudget + "'>\u20AC" + d3c.fmtNum(d._lostRevenue) + "</span>" +
+          "<span>Effective rate</span><span>\u20AC" + Math.round(d._effRateActual) + "/hr</span>" +
+          "<span>Rate dilution from overruns</span><span style='color:" + dilColor + "'>" + dilSign + "\u20AC" + Math.abs(Math.round(d._rateDilution)) + "/hr</span>" +
+          "<span style='font-weight:600;color:#374151;grid-column:1/-1;margin-top:6px'>Recognized revenue: \u20AC" + d3c.fmtNum(d._revenue) + "</span>" +
+          "</div>";
+      },
+      xLabel: "Number of Deals",
+      yLabel: "% Overbudget (RED)",
+      xFormat: function(d) { return d; },
+      yFormat: function(d) { return d + "%"; },
+      refLines: [
+        {axis:"y", value:50, color:"#E74C3C", dash:"4,3", label:"50% threshold"},
+        {axis:"y", value:25, color:"#F39C12", dash:"4,3", label:"25% threshold"}
+      ],
+      minSize: 10, maxSize: 32,
+      margin: {top: 20, right: 40, bottom: 50, left: 60},
+      height: 400
+    });
+
     // CHART 10: Scope Creep Radar (filtered to deals with time entries in selected period)
     var dealMonthly = u.filterByMonth(DATA.deal_monthly || [], "month", f.startMonth, f.endMonth);
     var activeDeals = {};

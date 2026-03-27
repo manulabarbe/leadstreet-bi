@@ -42,7 +42,19 @@ section h2{font-size:16px;font-weight:600;margin-bottom:12px;color:var(--text-pr
 .kpi-strip>.kpi-item+.kpi-item{border-left:1px solid var(--border)}
 .kpi-label{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:2px}
 .kpi-value{font-size:20px;font-weight:700;letter-spacing:-.3px}
+.kpi-sub{font-size:11px;color:#64748B;margin-top:2px}
 .kpi-delta{font-size:10px;margin-top:2px;font-weight:600}
+.kpi-delta-label{font-weight:400}
+
+.kpi-strip-row{display:flex;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:4px;overflow:visible}
+.kpi-strip-row>.kpi-item{flex:1;padding:10px 14px;background:var(--surface)}
+.kpi-strip-row>.kpi-item+.kpi-item{border-left:1px solid var(--border)}
+
+.kpi-gap{font-size:10px;margin-top:3px;font-weight:600}
+.kpi-gap-val{font-weight:700}
+.kpi-gap-label{font-weight:400;color:var(--text-muted)}
+.kpi-commission-line{font-size:11px;color:var(--text-secondary);padding:4px 4px 0;margin-bottom:4px}
+.kpi-commission-line .comm-sub{color:var(--text-muted)}
 
 /* Chart grid */
 .chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
@@ -121,6 +133,18 @@ section h2{font-size:16px;font-weight:600;margin-bottom:12px;color:var(--text-pr
 .scenario-bar-fill{position:absolute;height:100%;border-radius:3px;background:linear-gradient(90deg,#E74C3C,#F39C12,#27AE60)}
 .scenario-bar-marker{position:absolute;top:-3px;width:3px;height:12px;background:var(--text-primary);border-radius:2px}
 
+.playground-toggle{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;background:none;border:none;font-size:10px;font-weight:500;color:var(--text-muted);cursor:pointer;font-family:inherit;letter-spacing:.3px;opacity:.5;transition:opacity .15s}
+.playground-toggle:hover{opacity:.85}
+.playground-toggle svg{transition:transform .15s}
+.playground-toggle.open svg{transform:rotate(90deg)}
+
+.kpi-strip-label{font-size:8px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);font-weight:600;padding:2px 4px;margin-bottom:2px;margin-top:4px}
+.kpi-commission-inline{display:inline-flex;align-items:center;gap:12px;padding:4px 12px;font-size:11px;color:var(--text-secondary);margin-top:2px;margin-bottom:2px}
+.kpi-commission-inline .comm-label{font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);font-weight:600}
+.kpi-commission-inline .comm-value{font-weight:700;font-size:13px;color:var(--text-primary)}
+.kpi-commission-inline .comm-sub{color:var(--text-muted);font-size:10px}
+.kpi-commission-inline .comm-delta{font-size:10px;font-weight:600}
+
 .forecast-sliders{display:flex;gap:14px;margin-bottom:8px;padding:8px 14px;background:transparent;border:none;border-radius:var(--radius);flex-wrap:wrap;align-items:center}
 .slider-group{flex:1;min-width:160px}
 .slider-group label{display:block;font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;font-weight:500;margin-bottom:2px}
@@ -191,3 +215,96 @@ section h2{font-size:16px;font-weight:600;margin-bottom:12px;color:var(--text-pr
 
 @media(max-width:1100px){.exec-card-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:700px){.exec-card-grid{grid-template-columns:1fr}}
+
+/* === MOBILE SIDEBAR TOGGLE === */
+.sidebar-toggle{display:none}
+.sidebar-overlay{display:none}
+
+/* === TABLET BREAKPOINT === */
+@media(max-width:768px){
+  /* Sidebar: slide off-screen, overlay when open */
+  .sidebar{transform:translateX(-100%);transition:transform .25s ease;z-index:1000}
+  .sidebar.open{transform:translateX(0);box-shadow:4px 0 24px rgba(0,0,0,.3)}
+
+  /* Overlay backdrop */
+  .sidebar-overlay{display:block;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:999;opacity:0;pointer-events:none;transition:opacity .25s ease}
+  .sidebar-overlay.active{opacity:1;pointer-events:auto}
+
+  /* Hamburger button */
+  .sidebar-toggle{display:flex;align-items:center;justify-content:center;position:fixed;top:10px;left:10px;z-index:998;width:40px;height:40px;border-radius:8px;border:1px solid var(--border);background:var(--surface);font-size:20px;color:var(--text-primary);cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+
+  /* Main content: full width */
+  .main{margin-left:0;padding:12px;padding-top:56px}
+
+  /* Chart grid: single column */
+  .chart-grid{grid-template-columns:1fr}
+
+  /* KPI strips: wrap to 2x2 */
+  .kpi-strip{flex-wrap:wrap}
+  .kpi-strip>.kpi-item{flex:1 1 45%;min-width:0}
+  .kpi-strip>.kpi-item+.kpi-item{border-left:none;border-top:1px solid var(--border)}
+  .kpi-strip>.kpi-item:nth-child(even){border-left:1px solid var(--border)}
+  .kpi-value{font-size:17px}
+
+  .kpi-strip-row{flex-wrap:wrap}
+  .kpi-strip-row>.kpi-item{flex:1 1 45%;min-width:0}
+  .kpi-strip-row>.kpi-item+.kpi-item{border-left:none;border-top:1px solid var(--border)}
+  .kpi-strip-row>.kpi-item:nth-child(even){border-left:1px solid var(--border)}
+
+  /* Forecast KPIs */
+  .forecast-kpis{flex-wrap:wrap}
+  .forecast-kpis>.fc-kpi{flex:1 1 45%;min-width:0}
+  .forecast-kpis>.fc-kpi+.fc-kpi{border-left:none;border-top:1px solid var(--border)}
+  .forecast-kpis>.fc-kpi:nth-child(even){border-left:1px solid var(--border)}
+  .fc-kpi-value{font-size:20px}
+
+  /* Filter bar: stack */
+  .filter-bar{flex-direction:column;align-items:stretch;gap:8px}
+  .filter-bar label{margin-bottom:-4px}
+  .section-filters{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+  /* Tab bar: horizontal scroll */
+  .tab-bar{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;flex-wrap:nowrap}
+
+  /* Touch targets */
+  .nav-item{padding:12px 16px;font-size:15px}
+  .preset-btn,.tab-btn,.metric-toggle,.yoy-toggle{min-height:44px;display:inline-flex;align-items:center}
+  .filter-check{padding:8px 4px}
+
+  /* Tooltips */
+  .card-info-tip{width:min(240px,calc(100vw - 40px))}
+
+  /* Tables */
+  .pnl-table td:first-child,.pnl-table th:first-child{min-width:140px}
+
+  /* Forecast sliders */
+  .forecast-sliders{flex-direction:column}
+  .slider-group{min-width:0;width:100%}
+
+  /* Forecast scenarios */
+  .forecast-scenarios{flex-direction:column;gap:8px}
+}
+
+/* === SMALL PHONE BREAKPOINT === */
+@media(max-width:480px){
+  .main{padding:8px;padding-top:52px}
+
+  /* KPIs: stack fully */
+  .kpi-strip>.kpi-item{flex:1 1 100%}
+  .kpi-strip>.kpi-item+.kpi-item{border-left:none}
+  .kpi-value{font-size:16px}
+
+  .kpi-strip-row>.kpi-item{flex:1 1 100%}
+  .kpi-strip-row>.kpi-item+.kpi-item{border-left:none}
+
+  .forecast-kpis>.fc-kpi{flex:1 1 100%}
+  .forecast-kpis>.fc-kpi+.fc-kpi{border-left:none}
+  .fc-kpi-value{font-size:18px}
+
+  /* Chart cards: tighter padding */
+  .chart-card{padding:8px 10px}
+
+  /* Forecast section */
+  .forecast-section{padding:12px}
+  .forecast-header h3{font-size:15px}
+}
