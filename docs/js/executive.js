@@ -536,7 +536,165 @@
 
   // === AI EXECUTIVE RECAP ===
   var recapInitialized = false;
-  function buildAIRecap(kpiContext) {
+
+  function gatherRecapContext() {
+    var A = window.PNL_ACTUALS, B = window.PNL_BUDGET;
+    var nc = A ? countActualMonths() : 0;
+    if (!A || !B || nc === 0) return null;
+
+    // P&L: actuals vs budget for closed months
+    var pnl = {
+      months_closed: nc,
+      revenue_actual: sumArr(A.turnover, 0, nc),
+      revenue_budget: sumArr(B.turnover, 0, nc),
+      service_rev_actual: sumArr(A.service_rev, 0, nc),
+      service_rev_budget: sumArr(B.service_rev, 0, nc),
+      commission_actual: sumArr(A.other_rev, 0, nc),
+      commission_budget: sumArr(B.other_rev, 0, nc),
+      commission_budget_by_month: B.commission ? B.commission.slice(0, 6) : B.other_rev.slice(0, 6),
+      gross_profit_actual: sumArr(A.gross_profit, 0, nc),
+      gross_profit_budget: sumArr(B.gross_profit, 0, nc),
+      gross_margin_actual_pct: +(sumArr(A.gross_profit, 0, nc) / sumArr(A.turnover, 0, nc) * 100).toFixed(1),
+      gross_margin_budget_pct: +(sumArr(B.gross_profit, 0, nc) / sumArr(B.turnover, 0, nc) * 100).toFixed(1),
+      ebitda_actual: sumArr(A.reported_ebitda, 0, nc),
+      ebitda_budget: sumArr(B.reported_ebitda, 0, nc),
+      people_cost_actual: sumArr(A.people_cost, 0, nc),
+      people_cost_budget: sumArr(B.people_cost, 0, nc),
+      freelancer_cost_actual: sumArr(A.freelancers, 0, nc),
+      freelancer_cost_budget: sumArr(B.freelancers, 0, nc)
+    };
+
+    // Monthly breakdown for trend
+    pnl.monthly = [];
+    for (var i = 0; i < nc; i++) {
+      pnl.monthly.push({
+        month: ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][i],
+        revenue: A.turnover[i], rev_budget: B.turnover[i],
+        service_rev: A.service_rev[i], service_rev_budget: B.service_rev[i],
+        commission: A.other_rev[i], comm_budget: B.other_rev[i],
+        gross_margin_pct: A.gross_profit_pct[i], margin_budget_pct: B.gross_profit_pct[i],
+        ebitda: A.reported_ebitda[i], ebitda_budget: B.reported_ebitda[i]
+      });
+    }
+
+    // Full-year budget totals for context
+    pnl.fy_budget = {
+      revenue: sumArr(B.turnover, 0, 12),
+      service_rev: sumArr(B.service_rev, 0, 12),
+      commission: sumArr(B.other_rev, 0, 12),
+      gross_profit: sumArr(B.gross_profit, 0, 12),
+      ebitda: sumArr(B.reported_ebitda, 0, 12)
+    };
+
+    // Delivery metrics from Productive
+    var now = new Date();
+    var currentMonthStr = now.getFullYear() + "-" + (now.getMonth() + 1 < 10 ? "0" : "") + (now.getMonth() + 1);
+    var fm = (DATA.financial_monthly || []).filter(function(r) {
+      var m = r.month ? r.month.substring(0, 7) : null;
+      return m && m >= "2026-01" && m < currentMonthStr;
+    });
+    var delivery = {
+      months: fm.map(function(r) {
+        return {
+          month: r.month, revenue: Math.round(r.revenue || 0),
+          staff_cost: Math.round(r.staff_cost || 0),
+          margin_pct: +(r.margin_pct || 0).toFixed(1),
+          util_pct: +(r.util_pct || 0).toFixed(1),
+          total_hours: Math.round(r.total_hours || 0),
+          billable_hours: Math.round(r.billable_hours || 0)
+        };
+      })
+    };
+    if (fm.length > 0) {
+      var totRev = u.sum(fm, "revenue"), totCost = u.sum(fm, "staff_cost");
+      var totHrs = u.sum(fm, "total_hours"), totBill = u.sum(fm, "billable_hours");
+      delivery.ytd = {
+        revenue: Math.round(totRev), staff_cost: Math.round(totCost),
+        delivery_margin_pct: totRev ? +((totRev - totCost) / totRev * 100).toFixed(1) : 0,
+        utilisation_pct: totHrs ? +(totBill / totHrs * 100).toFixed(1) : 0,
+        effective_rate: totHrs ? +(totRev / totHrs).toFixed(0) : 0,
+        avg_billable_rate: totBill ? +(totRev / totBill).toFixed(0) : 0
+      };
+    }
+
+    // Top people by utilisation (bottom 5 and top 5)
+    var pm = (DATA.people_monthly || []).filter(function(r) {
+      var m = r.month ? r.month.substring(0, 7) : null;
+      return m && m >= "2026-01" && m < currentMonthStr && (r.hours || 0) > 20;
+    });
+    var personMap = {};
+    pm.forEach(function(r) {
+      if (!personMap[r.person_name]) personMap[r.person_name] = { hours: 0, billable: 0, cost: 0, revenue: 0 };
+      var p = personMap[r.person_name];
+      p.hours += r.hours || 0; p.billable += r.billable_hours || 0;
+      p.cost += r.staff_cost || 0; p.revenue += r.entry_revenue || 0;
+    });
+    var people = Object.keys(personMap).map(function(name) {
+      var p = personMap[name];
+      return {
+        name: name,
+        util_pct: p.hours ? +(p.billable / p.hours * 100).toFixed(1) : 0,
+        effective_rate: p.hours ? +(p.revenue / p.hours).toFixed(0) : 0,
+        total_hours: Math.round(p.hours)
+      };
+    }).sort(function(a, b) { return a.util_pct - b.util_pct; });
+
+    // Service type metrics
+    var stm = (DATA.service_type_monthly || []).filter(function(r) {
+      var m = r.month ? r.month.substring(0, 7) : null;
+      return m && m >= "2026-01" && m < currentMonthStr;
+    });
+    var svcMap = {};
+    stm.forEach(function(r) {
+      var k = r.service_type || "Unknown";
+      if (!svcMap[k]) svcMap[k] = { hours: 0, billable: 0, cost: 0, revenue: 0 };
+      var s = svcMap[k];
+      s.hours += r.total_hours || 0; s.billable += r.billable_hours || 0;
+      s.cost += r.staff_cost || 0; s.revenue += r.allocated_revenue || r.revenue || 0;
+    });
+    var services = Object.keys(svcMap).map(function(k) {
+      var s = svcMap[k];
+      return {
+        type: k, hours: Math.round(s.hours), billable_hours: Math.round(s.billable),
+        effective_rate: s.hours ? +(s.revenue / s.hours).toFixed(0) : 0,
+        acph: s.hours ? +(s.cost / s.hours).toFixed(0) : 0,
+        margin_per_hour: s.hours ? +((s.revenue - s.cost) / s.hours).toFixed(0) : 0
+      };
+    }).sort(function(a, b) { return b.hours - a.hours; });
+
+    // Overbudget deals
+    var ob = DATA.overbudget || [];
+    var redDeals = ob.filter(function(d) { return d.flag === "RED"; });
+    var amberDeals = ob.filter(function(d) { return d.flag === "AMBER"; });
+    var overbudget = {
+      red_count: redDeals.length, amber_count: amberDeals.length,
+      total_overspend: Math.round(u.sum(redDeals, "overspend_cost")),
+      worst_3: redDeals.sort(function(a, b) { return (b.overspend_cost || 0) - (a.overspend_cost || 0); }).slice(0, 3).map(function(d) {
+        return { name: d.name, client: d.company_name, overspend: Math.round(d.overspend_cost || 0), burn_pct: Math.round(d.hours_burn_pct || 0) };
+      })
+    };
+
+    // Top clients by revenue
+    var clients = (DATA.clients || []).slice().sort(function(a, b) { return (b.revenue || 0) - (a.revenue || 0); }).slice(0, 10).map(function(c) {
+      return {
+        name: c.client_name, revenue: Math.round(c.revenue || 0),
+        hours: Math.round(c.total_hours || 0),
+        overbudget_deals: c.overbudget_deals || 0
+      };
+    });
+
+    return {
+      pnl: pnl,
+      delivery: delivery,
+      people_bottom5: people.slice(0, 5),
+      people_top5: people.slice(-5).reverse(),
+      services: services,
+      overbudget: overbudget,
+      top_clients: clients
+    };
+  }
+
+  function buildAIRecap() {
     if (recapInitialized) return;
     recapInitialized = true;
     var btn = document.getElementById("exec-recap-btn");
@@ -546,13 +704,43 @@
       btn.disabled = true; btn.textContent = "Generating...";
       content.style.display = "block";
       content.innerHTML = '<span style="color:var(--text-muted)">Analyzing your metrics...</span>';
-      var prompt = "You are a CFO-level analyst for LeadStreet, a HubSpot agency. Write a 3-4 sentence executive briefing for the CEO based on these YTD metrics. Focus on what matters most and one clear action.\n\nMetrics:\n" + JSON.stringify(kpiContext, null, 2);
+
+      var ctx = gatherRecapContext();
+      if (!ctx) {
+        content.innerHTML = '<span class="exec-recap-error">No closed months available yet.</span>';
+        btn.textContent = "Generate Executive Recap"; btn.disabled = false;
+        return;
+      }
+
+      var prompt = "You are the world's smartest agency CEO — you've scaled multiple HubSpot partner agencies and you think in terms of delivery margin, effective rates, and capacity utilisation. You are reviewing YTD performance for LeadStreet, a HubSpot diamond partner agency (team of ~15 freelancers + 3 owner-managers).\n\n"
+        + "CONTEXT:\n"
+        + "- LeadStreet's 2026 strategy: increase delivery margin by improving utilisation and effective rates\n"
+        + "- HubSpot commission (~€35K/month in Q1) is expected to DROP significantly through the year (budget shows decline from €35K to €28K/month by Q4) — this is a known headwind\n"
+        + "- All amounts are in EUR. Costs are negative in the data.\n"
+        + "- 'Effective rate' = revenue / total hours (not just billable). This is the metric that matters — it captures scope creep.\n"
+        + "- Owner-managers have a flat €14.2K/month cost override each\n\n"
+        + "WRITE A BRIEFING THAT COVERS:\n"
+        + "1. **P&L vs Budget** — Are we ahead or behind? By how much? What's driving the gap?\n"
+        + "2. **Commission risk** — How is HubSpot commission tracking vs budget? Flag if the expected decline is on track or accelerating.\n"
+        + "3. **Delivery margin** — How is the delivery-only margin (service revenue minus staff cost)? Is the strategy of improving delivery margin working?\n"
+        + "4. **People** — Who are the utilisation outliers (high and low)? Any concerns?\n"
+        + "5. **Service types** — Which service types have the best/worst effective rates and margins?\n"
+        + "6. **Scope creep risk** — How many RED/AMBER overbudget deals? How bad is the overspend?\n"
+        + "7. **One clear action** — The single most important thing to do this week.\n\n"
+        + "FORMAT: Use short paragraphs with bold headers. Be specific — use actual numbers, names, percentages. No fluff. Think like a CEO who reads P&Ls for breakfast.\n\n"
+        + "DATA:\n" + JSON.stringify(ctx, null, 2);
+
       var isLocal = location.hostname === "localhost" || location.hostname === "127.0.0.1";
       var endpoint = isLocal ? "/api/chat" : "https://leadstreet-recap.labarbemanu.workers.dev";
       var payload = isLocal ? { question: prompt, conversation: [] } : { prompt: prompt };
       fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
       .then(function(r) { if (!r.ok) throw new Error("err"); return r.json(); })
-      .then(function(data) { content.innerHTML = data.answer || "No response."; btn.textContent = "Regenerate Recap"; btn.disabled = false; })
+      .then(function(data) {
+        // Convert markdown bold to HTML
+        var html = (data.answer || "No response.").replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>');
+        content.innerHTML = html;
+        btn.textContent = "Regenerate Recap"; btn.disabled = false;
+      })
       .catch(function() { content.innerHTML = '<span class="exec-recap-error">Recap service unavailable. Please try again later.</span>'; btn.textContent = "Generate Executive Recap"; btn.disabled = false; });
     });
   }
@@ -605,12 +793,6 @@
     buildOperationalAlerts();
 
     // AI recap
-    var A = window.PNL_ACTUALS, nc = A ? countActualMonths() : 0;
-    buildAIRecap({
-      pnl_revenue: sumArr(A ? A.turnover : [], 0, nc),
-      pnl_margin: sumArr(A ? A.gross_profit : [], 0, nc),
-      pnl_ebitda: sumArr(A ? A.reported_ebitda : [], 0, nc),
-      months_closed: nc
-    });
+    buildAIRecap();
   });
 })(window.Dashboard);
