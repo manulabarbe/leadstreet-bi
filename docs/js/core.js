@@ -362,6 +362,7 @@
   // === APPLY FILTERS (thin dispatcher) ===
   function applyFilters() {
     var f = getFilters();
+    updateFilterSummary();
     // Call ALL registered section handlers (same behavior as before)
     var ids = Object.keys(Dashboard._sectionHandlers);
     for (var i = 0; i < ids.length; i++) {
@@ -436,8 +437,22 @@
     document.querySelector('.sidebar-overlay').classList.toggle('active');
   }
 
+  // === FILTER BAR TOGGLE (mobile) ===
+  function toggleFilterBar() {
+    document.getElementById('global-filters').classList.toggle('open');
+  }
+
+  function updateFilterSummary() {
+    var el = document.getElementById('filter-summary-text');
+    if (!el) return;
+    var s = document.getElementById('start-month').value;
+    var e = document.getElementById('end-month').value;
+    el.textContent = 'Filters: ' + s + ' → ' + e;
+  }
+
   // Functions called from HTML onclick handlers MUST be global
   window.toggleSidebar = toggleSidebar;
+  window.toggleFilterBar = toggleFilterBar;
   window.applyFilters = applyFilters;
   window.showSection = showSection;
   window.setPreset = setPreset;

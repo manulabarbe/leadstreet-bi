@@ -100,7 +100,7 @@ def build_dashboard():
 </head>
 <body>
 <div class="sidebar">
-  <div class="sidebar-header"><h1>LeadStreet BI</h1><div class="sub">Business Intelligence</div></div>
+  <div class="sidebar-header"><h1>LeadStreet BI</h1><div class="sub">Business Intelligence</div><button class="sidebar-close" onclick="toggleSidebar()">&times;</button></div>
   <nav>{nav_html}</nav>
   <div class="sidebar-footer">Last updated {today}</div>
 </div>
@@ -111,15 +111,18 @@ def build_dashboard():
 
   <!-- Global filter bar -->
   <div class="filter-bar" id="global-filters">
-    <label>From</label><input type="month" id="start-month" value="{min_month}" min="{min_month}" max="{max_month}" onchange="applyFilters()">
-    <label>To</label><input type="month" id="end-month" value="{max_month}" min="{min_month}" max="{max_month}" onchange="applyFilters()">
-    <button class="preset-btn" onclick="setPreset('ytd')">YTD</button>
-    <button class="preset-btn" onclick="setPreset('3m')">3M</button>
-    <button class="preset-btn" onclick="setPreset('6m')">6M</button>
-    <button class="preset-btn" onclick="setPreset('2025')">2025</button>
-    <button class="preset-btn" onclick="setPreset('2026')">2026</button>
-    <button class="preset-btn active" onclick="setPreset('all')">All</button>
-    <button class="yoy-toggle" id="yoy-toggle" onclick="toggleYoY()">YoY</button>
+    <div class="filter-bar-summary" onclick="toggleFilterBar()"><span id="filter-summary-text">Filters</span><span class="filter-bar-chevron">&#9660;</span></div>
+    <div class="filter-bar-content">
+      <label>From</label><input type="month" id="start-month" value="{min_month}" min="{min_month}" max="{max_month}" onchange="applyFilters()">
+      <label>To</label><input type="month" id="end-month" value="{max_month}" min="{min_month}" max="{max_month}" onchange="applyFilters()">
+      <button class="preset-btn" onclick="setPreset('ytd')">YTD</button>
+      <button class="preset-btn" onclick="setPreset('3m')">3M</button>
+      <button class="preset-btn" onclick="setPreset('6m')">6M</button>
+      <button class="preset-btn" onclick="setPreset('2025')">2025</button>
+      <button class="preset-btn" onclick="setPreset('2026')">2026</button>
+      <button class="preset-btn active" onclick="setPreset('all')">All</button>
+      <button class="yoy-toggle" id="yoy-toggle" onclick="toggleYoY()">YoY</button>
+    </div>
   </div>
 
   <!-- EXECUTIVE -->
@@ -201,6 +204,8 @@ def build_dashboard():
       <div class="chart-grid">
         <div class="chart-card chart-full"><div class="chart-card-header">Monthly Revenue vs Budget</div><div style="font-size:11px;color:#5F6B7A;margin-bottom:6px">Revenue and staff cost bars compared to budget revenue target (dashed line). Current month excluded (incomplete data).</div><div id="chart-fin-revenue" style="height:380px"></div></div>
         <div class="chart-card chart-full"><div class="chart-card-header">Delivery Margin vs Budget</div><div style="font-size:11px;color:#5F6B7A;margin-bottom:6px">Delivery margin: (recognized revenue &minus; staff cost) / revenue. Excludes HubSpot commission. Compared to budget margin target. Current month excluded.</div><div id="chart-fin-margin" style="height:340px"></div></div>
+        <div class="chart-card chart-full"><div class="chart-card-header">Margin Drivers</div><div style="font-size:11px;color:#5F6B7A;margin-bottom:6px">What's driving margin each month. Red = hurting margin, green = helping. Values shown relative to period average.</div><div id="chart-fin-margin-drivers" style="height:190px"></div></div>
+        <div class="chart-card chart-full" id="margin-bridge-wrapper" style="display:none"><div class="chart-card-header">Margin Bridge &mdash; <span id="margin-bridge-title"></span></div><div style="font-size:11px;color:#5F6B7A;margin-bottom:6px">Click any bar in the Delivery Margin chart to see what changed vs the previous month.</div><div id="chart-fin-margin-bridge" style="height:300px"></div><div id="margin-bridge-details"></div></div>
         <div class="chart-card chart-full" id="yoy-wrapper" style="display:none"><div class="chart-card-header">Year-over-Year</div><div id="chart-fin-yoy" style="height:340px"></div></div>
       </div>
 

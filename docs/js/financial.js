@@ -58,15 +58,653 @@
     });
   }
 
+  function computeMarginDrivers(curr, prev) {
+    var drivers = {};
+    var stm = DATA.service_type_monthly || [];
+    var clm = DATA.client_monthly || [];
+
+    // Utilisation
+    drivers.util = curr.util_pct || 0;
+    drivers.prevUtil = prev ? (prev.util_pct || 0) : null;
+
+    // Revenue per billable hour
+    drivers.revPerHr = curr.billable_hours > 0
+      ? curr.revenue / curr.billable_hours : 0;
+    drivers.prevRevPerHr = prev && prev.billable_hours > 0
+      ? prev.revenue / prev.billable_hours : null;
+
+    // Staff cost
+    drivers.cost = curr.staff_cost || 0;
+    drivers.prevCost = prev ? (prev.staff_cost || 0) : null;
+
+    // Revenue (for context)
+    drivers.revenue = curr.revenue || 0;
+    drivers.prevRevenue = prev ? (prev.revenue || 0) : null;
+
+    // Top service type by revenue this month
+    var svcThisMonth = stm.filter(function(r) { return r.month === curr.month && r.revenue > 0; });
+    svcThisMonth.sort(function(a, b) { return (b.revenue || 0) - (a.revenue || 0); });
+    if (svcThisMonth.length > 0) {
+      var totalSvcRev = svcThisMonth.reduce(function(s, r) { return s + (r.revenue || 0); }, 0);
+      drivers.topSvc = svcThisMonth[0].service_type;
+      drivers.topSvcPct = totalSvcRev > 0
+        ? (svcThisMonth[0].revenue / totalSvcRev * 100).toFixed(0) : 0;
+    }
+
+    // Top client by revenue this month
+    var cliThisMonth = clm.filter(function(r) { return r.month === curr.month && r.revenue > 0; });
+    cliThisMonth.sort(function(a, b) { return (b.revenue || 0) - (a.revenue || 0); });
+    if (cliThisMonth.length > 0) {
+      var totalCliRev = cliThisMonth.reduce(function(s, r) { return s + (r.revenue || 0); }, 0);
+      drivers.topCli = cliThisMonth[0].client_name;
+      drivers.topCliPct = totalCliRev > 0
+        ? (cliThisMonth[0].revenue / totalCliRev * 100).toFixed(0) : 0;
+    }
+
+    return drivers;
+  }
+
+  function driverDelta(label, curr, prev, unit, higherIsGood) {
+    if (prev == null) return "";
+    var diff = curr - prev;
+    if (Math.abs(diff) < 0.05) return "";
+    var good = higherIsGood ? diff > 0 : diff < 0;
+    var arrow = diff > 0 ? "▲" : "▼";
+    var color = good ? "#059669" : "#dc2626";
+    var fmtCurr = unit === "€" ? u.fmtK(curr) : curr.toFixed(1) + "%";
+    var fmtPrev = unit === "€" ? u.fmtK(prev) : prev.toFixed(1) + "%";
+    return "<span>" + label + "</span>"
+      + "<span style='color:" + color + "'>" + fmtCurr
+      + " <span style='font-size:10px;color:#94A3B8'>← " + fmtPrev + "</span>"
+      + " " + arrow + "</span>";
+  }
+
+  // ── Margin Drivers Heatmap ──────────────────────────────────────
+  function buildMarginDriversHeatmap(containerId, data) {
+    if (!data || data.length < 2) return;
+
+    var months = data.map(function(r) { return r.month; });
+
+    // Compute raw driver values per month
+    var utils = [], revPerHrs = [], costPerHrs = [], nonBillHrs = [];
+    data.forEach(function(r) {
+      utils.push(r.util_pct || 0);
+      revPerHrs.push(r.billable_hours > 0 ? r.revenue / r.billable_hours : 0);
+      costPerHrs.push(r.total_hours > 0 ? r.staff_cost / r.total_hours : 0);
+      nonBillHrs.push((r.total_hours || 0) - (r.billable_hours || 0));
+    });
+
+    // Normalize to 0–1 centered on mean, spread by ±1.5 std dev
+    function normalize(arr, invert) {
+      var n = arr.length;
+      var mean = arr.reduce(function(s, v) { return s + v; }, 0) / n;
+      var variance = arr.reduce(function(s, v) { return s + (v - mean) * (v - mean); }, 0) / n;
+      var sd = Math.sqrt(variance) || 1;
+      return arr.map(function(v) {
+        var z = (v - mean) / (1.5 * sd);
+        var t = (z + 1) / 2;
+        t = Math.max(0, Math.min(1, t));
+        return invert ? 1 - t : t;
+      });
+    }
+
+    var yLabels = ["Utilisation %", "Non-billable hrs", "Avg Rate (€/bill hr)", "Avg Cost (€/hr)"];
+    var zMatrix = [
+      normalize(utils, false),
+      normalize(nonBillHrs.map(function(v) { return -v; }), false),   // negate so higher non-billable = lower = red
+      normalize(revPerHrs, false),
+      normalize(costPerHrs, true)
+    ];
+    var textMatrix = [
+      utils.map(function(v) { return v.toFixed(1) + "%"; }),
+      nonBillHrs.map(function(v) { return Math.round(v) + "h"; }),
+      revPerHrs.map(function(v) { return "€" + Math.round(v); }),
+      costPerHrs.map(function(v) { return "€" + Math.round(v); })
+    ];
+
+    var allVals = [utils, nonBillHrs, revPerHrs, costPerHrs];
+    var invertFlags = [false, true, false, true];
+
+    d3c.heatmap(containerId, null, {
+      xLabels: months,
+      yLabels: yLabels,
+      zMatrix: zMatrix,
+      textMatrix: textMatrix,
+      colorScale: [[0, "#ef4444"], [0.35, "#fbbf24"], [0.65, "#a3e635"], [1, "#10b981"]],
+      zMin: 0, zMax: 1,
+      cellH: 34,
+      cellFontSize: 10,
+      margin: {top: 4, right: 40, bottom: 50, left: 120},
+      tooltipFn: function(cell) {
+        var ri = cell.row, ci = cell.col;
+        var month = months[ci];
+        var label = yLabels[ri];
+        var val = allVals[ri][ci];
+        var mean = allVals[ri].reduce(function(s, v) { return s + v; }, 0) / allVals[ri].length;
+        var diff = val - mean;
+        var isHrs = ri === 1;
+        var isPct = ri === 0;
+        var fmtVal = isPct ? val.toFixed(1) + "%" : isHrs ? Math.round(val) + "h" : "€" + Math.round(val);
+        var fmtMean = isPct ? mean.toFixed(1) + "%" : isHrs ? Math.round(mean) + "h" : "€" + Math.round(mean);
+        var fmtDiff = isPct ? (diff >= 0 ? "+" : "") + diff.toFixed(1) + "pp"
+          : isHrs ? (diff >= 0 ? "+" : "") + Math.round(diff) + "h"
+          : (diff >= 0 ? "+" : "") + "€" + Math.round(diff);
+        var good = invertFlags[ri] ? diff < 0 : diff > 0;
+        return "<div style='font-weight:600;margin-bottom:4px'>" + month + " — " + label + "</div>"
+          + "<div style='display:grid;grid-template-columns:auto auto;gap:2px 12px;color:#5F6B7A'>"
+          + "<span>Value</span><span style='font-weight:600'>" + fmtVal + "</span>"
+          + "<span>Avg</span><span>" + fmtMean + "</span>"
+          + "<span>Diff</span><span style='color:" + (good ? "#059669" : "#dc2626") + ";font-weight:600'>" + fmtDiff + "</span>"
+          + "</div>";
+      }
+    });
+  }
+
+  // ── Margin Bridge Waterfall ───────────────────────────────────
+  var _marginData = null;  // stored reference for click handler
+
+  function buildMarginBridge(containerId, curr, prev) {
+    if (!prev) return;
+    var el = document.getElementById(containerId);
+    if (el) el.innerHTML = "";
+    // Remove old narrative if re-clicking
+    var oldNarr = document.getElementById(containerId + "-narrative");
+    if (oldNarr) oldNarr.remove();
+
+    var stm = DATA.service_type_monthly || [];
+    var ppm = DATA.people_monthly || [];
+
+    var prevMargin = prev.revenue - prev.staff_cost;
+    var currMargin = curr.revenue - curr.staff_cost;
+
+    var prevRevPerHr = prev.billable_hours > 0 ? prev.revenue / prev.billable_hours : 0;
+    var currRevPerHr = curr.billable_hours > 0 ? curr.revenue / curr.billable_hours : 0;
+
+    // Decompose: margin change = hours effect + rate effect + cost effect
+    var hoursEffect = (curr.billable_hours - prev.billable_hours) * prevRevPerHr;
+    var rateEffect = prev.billable_hours * (currRevPerHr - prevRevPerHr);
+    var costEffect = -(curr.staff_cost - prev.staff_cost);
+    var residual = (currMargin - prevMargin) - hoursEffect - rateEffect - costEffect;
+
+    // --- Compute top contributors for each effect ---
+
+    // Service type: billable hours & revenue change
+    var svcPrev = {}, svcCurr = {};
+    stm.forEach(function(r) {
+      if (r.month === prev.month) svcPrev[r.service_type] = r;
+      if (r.month === curr.month) svcCurr[r.service_type] = r;
+    });
+    var allSvcTypes = {};
+    Object.keys(svcPrev).forEach(function(k) { allSvcTypes[k] = 1; });
+    Object.keys(svcCurr).forEach(function(k) { allSvcTypes[k] = 1; });
+
+    var svcHoursDelta = [], svcRevDelta = [];
+    Object.keys(allSvcTypes).forEach(function(svc) {
+      var p = svcPrev[svc] || {billable_hours: 0, revenue: 0};
+      var c = svcCurr[svc] || {billable_hours: 0, revenue: 0};
+      var dHrs = (c.billable_hours || 0) - (p.billable_hours || 0);
+      var dRev = (c.revenue || 0) - (p.revenue || 0);
+      if (Math.abs(dHrs) > 0.5) svcHoursDelta.push({name: svc, delta: dHrs});
+      if (Math.abs(dRev) > 50) svcRevDelta.push({name: svc, delta: dRev});
+    });
+    svcHoursDelta.sort(function(a, b) { return Math.abs(b.delta) - Math.abs(a.delta); });
+    svcRevDelta.sort(function(a, b) { return Math.abs(b.delta) - Math.abs(a.delta); });
+
+    // People: billable hours & cost change + deep breakdown
+    var pplPrev = {}, pplCurr = {};
+    ppm.forEach(function(r) {
+      if (r.month === prev.month) pplPrev[r.person_name] = r;
+      if (r.month === curr.month) pplCurr[r.person_name] = r;
+    });
+    var allPeople = {};
+    Object.keys(pplPrev).forEach(function(k) { allPeople[k] = 1; });
+    Object.keys(pplCurr).forEach(function(k) { allPeople[k] = 1; });
+
+    // Person × service type × month for deep drill-down
+    var psm = DATA.person_svc_monthly || [];
+    function getPersonSvcBreakdown(personName, month) {
+      var rows = [];
+      psm.forEach(function(r) {
+        if (r.person_name === personName && r.month === month) rows.push(r);
+      });
+      return rows;
+    }
+
+    var pplHoursDelta = [], pplCostDelta = [];
+    Object.keys(allPeople).forEach(function(name) {
+      var p = pplPrev[name] || {billable_hours: 0, hours: 0, staff_cost: 0};
+      var c = pplCurr[name] || {billable_hours: 0, hours: 0, staff_cost: 0};
+      var dBill = (c.billable_hours || 0) - (p.billable_hours || 0);
+      var dTotal = (c.hours || 0) - (p.hours || 0);
+      var dNonBill = ((c.hours || 0) - (c.billable_hours || 0)) - ((p.hours || 0) - (p.billable_hours || 0));
+      var dCost = (c.staff_cost || 0) - (p.staff_cost || 0);
+
+      if (Math.abs(dBill) > 0.5) {
+        // Build explanation of WHY billable hours changed
+        var reasons = [];
+        if (Math.abs(dTotal) > 5) {
+          reasons.push(dTotal > 0
+            ? "worked " + Math.round(Math.abs(dTotal)) + "h more overall"
+            : "worked " + Math.round(Math.abs(dTotal)) + "h less overall");
+        }
+        if (Math.abs(dNonBill) > 3) {
+          reasons.push(dNonBill > 0
+            ? Math.round(Math.abs(dNonBill)) + "h more non-billable"
+            : Math.round(Math.abs(dNonBill)) + "h less non-billable");
+        }
+
+        // Service type shifts
+        var svcPrevP = getPersonSvcBreakdown(name, prev.month);
+        var svcCurrP = getPersonSvcBreakdown(name, curr.month);
+        var svcMap = {};
+        svcPrevP.forEach(function(r) { svcMap[r.service_type] = {prev: r.billable_hours || 0, curr: 0}; });
+        svcCurrP.forEach(function(r) {
+          if (!svcMap[r.service_type]) svcMap[r.service_type] = {prev: 0, curr: 0};
+          svcMap[r.service_type].curr = r.billable_hours || 0;
+        });
+        var svcShifts = [];
+        Object.keys(svcMap).forEach(function(svc) {
+          var d = svcMap[svc].curr - svcMap[svc].prev;
+          if (Math.abs(d) > 3) svcShifts.push({name: svc, delta: d});
+        });
+        svcShifts.sort(function(a, b) { return Math.abs(b.delta) - Math.abs(a.delta); });
+
+        // Non-billable by service type
+        var nbSvcMap = {};
+        svcPrevP.forEach(function(r) { nbSvcMap[r.service_type] = {prev: r.non_billable_hours || 0, curr: 0}; });
+        svcCurrP.forEach(function(r) {
+          if (!nbSvcMap[r.service_type]) nbSvcMap[r.service_type] = {prev: 0, curr: 0};
+          nbSvcMap[r.service_type].curr = r.non_billable_hours || 0;
+        });
+        var nbShifts = [];
+        Object.keys(nbSvcMap).forEach(function(svc) {
+          var d = nbSvcMap[svc].curr - nbSvcMap[svc].prev;
+          if (Math.abs(d) > 2) nbShifts.push({name: svc, delta: d});
+        });
+        nbShifts.sort(function(a, b) { return Math.abs(b.delta) - Math.abs(a.delta); });
+
+        pplHoursDelta.push({
+          name: name, delta: dBill, dTotal: dTotal, dNonBill: dNonBill,
+          reasons: reasons, svcShifts: svcShifts, nbShifts: nbShifts
+        });
+      }
+      if (Math.abs(dCost) > 50) pplCostDelta.push({name: name, delta: dCost});
+    });
+    pplHoursDelta.sort(function(a, b) { return Math.abs(b.delta) - Math.abs(a.delta); });
+    pplCostDelta.sort(function(a, b) { return Math.abs(b.delta) - Math.abs(a.delta); });
+
+    // Build compact contributor list (for service type / cost sections)
+    function topContribs(arr, unit, invert) {
+      if (!arr.length) return "";
+      var lines = [];
+      arr.slice(0, 3).forEach(function(item) {
+        var val = item.delta;
+        var sign = val > 0 ? "+" : "";
+        var fmt = unit === "hrs" ? sign + Math.round(val) + "h"
+          : sign + u.fmtK(val);
+        var good = invert ? val < 0 : val > 0;
+        lines.push("<span style='color:" + (good ? "#059669" : "#dc2626") + "'>"
+          + item.name.split(" ")[0] + " " + fmt + "</span>");
+      });
+      return lines.join(" · ");
+    }
+
+    // Build detailed person breakdown (for billable hours section)
+    function personDeepDive(arr) {
+      if (!arr.length) return "";
+      var html = "";
+      arr.slice(0, 3).forEach(function(p) {
+        var color = p.delta > 0 ? "#059669" : "#dc2626";
+        var verb = p.delta > 0 ? "more" : "fewer";
+        html += "<div style='margin-top:6px;padding:6px 8px;background:#f8fafc;border-radius:4px;border:1px solid #e2e8f0'>";
+        html += "<div style='font-weight:600;color:" + color + "'>" + p.name + " — " + Math.abs(Math.round(p.delta)) + "h " + verb + " billable</div>";
+
+        // Plain English explanation
+        var bullets = [];
+        if (Math.abs(p.dTotal) > 5) {
+          bullets.push(Math.abs(Math.round(p.dTotal)) + "h " + (p.dTotal > 0 ? "more" : "fewer") + " total hours tracked");
+        }
+        if (Math.abs(p.dNonBill) > 3) {
+          bullets.push(Math.abs(Math.round(p.dNonBill)) + "h " + (p.dNonBill > 0 ? "more" : "fewer") + " non-billable work");
+        }
+        if (bullets.length) {
+          html += "<div style='font-size:11px;color:#5F6B7A;margin-top:3px'>" + bullets.join(" · ") + "</div>";
+        }
+
+        // Where did billable hours go/come from?
+        if (p.svcShifts.length) {
+          var gained = [], lost = [];
+          p.svcShifts.slice(0, 4).forEach(function(s) {
+            if (s.delta > 0) gained.push(Math.round(s.delta) + "h more on <b>" + s.name + "</b>");
+            else lost.push(Math.round(Math.abs(s.delta)) + "h less on <b>" + s.name + "</b>");
+          });
+          if (lost.length) html += "<div style='font-size:11px;color:#dc2626;margin-top:3px'>↓ " + lost.join(", ") + "</div>";
+          if (gained.length) html += "<div style='font-size:11px;color:#059669;margin-top:2px'>↑ " + gained.join(", ") + "</div>";
+        }
+
+        // Where did non-billable time go?
+        if (p.nbShifts.length) {
+          var nbMore = [], nbLess = [];
+          p.nbShifts.slice(0, 3).forEach(function(s) {
+            if (s.delta > 0) nbMore.push(Math.round(s.delta) + "h more on <b>" + s.name + "</b>");
+            else nbLess.push(Math.round(Math.abs(s.delta)) + "h less on <b>" + s.name + "</b>");
+          });
+          if (nbMore.length) html += "<div style='font-size:11px;color:#94A3B8;margin-top:3px'>Non-billable ↑ " + nbMore.join(", ") + "</div>";
+          if (nbLess.length) html += "<div style='font-size:11px;color:#94A3B8;margin-top:2px'>Non-billable ↓ " + nbLess.join(", ") + "</div>";
+        }
+
+        html += "</div>";
+      });
+      return html;
+    }
+
+    // Build person breakdown for cost changes
+    function personCostDeepDive(arr) {
+      if (!arr.length) return "";
+      var html = "";
+      arr.slice(0, 3).forEach(function(item) {
+        var p = pplPrev[item.name] || {hours: 0, staff_cost: 0};
+        var c = pplCurr[item.name] || {hours: 0, staff_cost: 0};
+        var dHrs = (c.hours || 0) - (p.hours || 0);
+        var color = item.delta > 0 ? "#dc2626" : "#059669";
+        var verb = item.delta > 0 ? "more" : "less";
+        html += "<div style='margin-top:6px;padding:6px 8px;background:#f8fafc;border-radius:4px;border:1px solid #e2e8f0'>";
+        html += "<div style='font-weight:600;color:" + color + "'>" + item.name + " — " + u.fmtK(Math.abs(item.delta)) + " " + verb + "</div>";
+        var reason = "";
+        if (Math.abs(dHrs) > 5) {
+          reason = Math.abs(Math.round(dHrs)) + "h " + (dHrs > 0 ? "more" : "fewer") + " tracked";
+        }
+        if (Math.abs(item.delta) > 1000 && Math.abs(dHrs) < 5) {
+          reason = "rate/salary change (same hours)";
+        }
+        if (reason) html += "<div style='font-size:11px;color:#5F6B7A;margin-top:2px'>" + reason + "</div>";
+        html += "</div>";
+      });
+      return html;
+    }
+
+    // Build person breakdown for rate changes
+    function personRateDeepDive() {
+      var pplRate = [];
+      Object.keys(allPeople).forEach(function(name) {
+        var p = pplPrev[name] || {billable_hours: 0, revenue: 0};
+        var c = pplCurr[name] || {billable_hours: 0, revenue: 0};
+        var prevR = (p.billable_hours || 0) > 10 ? (p.revenue || 0) / p.billable_hours : null;
+        var currR = (c.billable_hours || 0) > 10 ? (c.revenue || 0) / c.billable_hours : null;
+        if (prevR != null && currR != null) {
+          var dRate = currR - prevR;
+          if (Math.abs(dRate) > 2) {
+            // Revenue impact = billable_hours × rate change
+            var impact = (c.billable_hours || 0) * dRate;
+            pplRate.push({name: name, prevRate: prevR, currRate: currR, dRate: dRate, impact: impact});
+          }
+        }
+      });
+      pplRate.sort(function(a, b) { return Math.abs(b.impact) - Math.abs(a.impact); });
+
+      if (!pplRate.length) return "";
+      var html = "";
+      pplRate.slice(0, 3).forEach(function(p) {
+        var color = p.dRate > 0 ? "#059669" : "#dc2626";
+        var verb = p.dRate > 0 ? "higher" : "lower";
+        html += "<div style='margin-top:6px;padding:6px 8px;background:#f8fafc;border-radius:4px;border:1px solid #e2e8f0'>";
+        html += "<div style='font-weight:600;color:" + color + "'>" + p.name + " — €" + Math.round(p.prevRate) + " → €" + Math.round(p.currRate) + "/hr</div>";
+        html += "<div style='font-size:11px;color:#5F6B7A;margin-top:2px'>" + verb + " rate, impact " + u.fmtK(p.impact) + " on margin</div>";
+
+        // Show service type shifts that explain the rate change
+        var svcP = getPersonSvcBreakdown(p.name, prev.month);
+        var svcC = getPersonSvcBreakdown(p.name, curr.month);
+        var svcMap = {};
+        svcP.forEach(function(r) { svcMap[r.service_type] = {prev: r.billable_hours || 0}; });
+        svcC.forEach(function(r) {
+          if (!svcMap[r.service_type]) svcMap[r.service_type] = {prev: 0};
+          svcMap[r.service_type].curr = r.billable_hours || 0;
+        });
+        var shifts = [];
+        Object.keys(svcMap).forEach(function(svc) {
+          var d = (svcMap[svc].curr || 0) - (svcMap[svc].prev || 0);
+          if (Math.abs(d) > 3) shifts.push({name: svc, delta: d});
+        });
+        shifts.sort(function(a, b) { return Math.abs(b.delta) - Math.abs(a.delta); });
+        if (shifts.length) {
+          var parts = [];
+          shifts.slice(0, 2).forEach(function(s) {
+            parts.push((s.delta > 0 ? "more " : "less ") + s.name);
+          });
+          html += "<div style='font-size:11px;color:#94A3B8;margin-top:2px'>Mix shift: " + parts.join(", ") + "</div>";
+        }
+
+        html += "</div>";
+      });
+      return html;
+    }
+
+    // --- Build narrative summary ---
+    var marginDelta = currMargin - prevMargin;
+    var improved = marginDelta >= 0;
+    var deltaHrs = Math.round(curr.billable_hours - prev.billable_hours);
+    var deltaCost = curr.staff_cost - prev.staff_cost;
+
+    // Find biggest driver
+    var effects = [
+      {name: "hours", abs: Math.abs(hoursEffect), val: hoursEffect},
+      {name: "rate", abs: Math.abs(rateEffect), val: rateEffect},
+      {name: "cost", abs: Math.abs(costEffect), val: costEffect}
+    ];
+    effects.sort(function(a, b) { return b.abs - a.abs; });
+    var biggest = effects[0];
+
+    var story = "";
+    if (improved) {
+      story = "Delivery margin <b style='color:#059669'>improved by " + u.fmtK(Math.abs(marginDelta)) + "</b>. ";
+    } else {
+      story = "Delivery margin <b style='color:#dc2626'>dropped by " + u.fmtK(Math.abs(marginDelta)) + "</b>. ";
+    }
+
+    if (biggest.name === "hours") {
+      if (deltaHrs > 0) {
+        story += "The team billed <b>" + deltaHrs + " more hours</b>, generating " + u.fmtK(Math.abs(hoursEffect)) + " in extra revenue.";
+      } else {
+        story += "The team billed <b>" + Math.abs(deltaHrs) + " fewer hours</b>, losing " + u.fmtK(Math.abs(hoursEffect)) + " in revenue.";
+      }
+    } else if (biggest.name === "rate") {
+      if (rateEffect > 0) {
+        story += "Revenue per billable hour <b>increased</b> (€" + Math.round(prevRevPerHr) + " → €" + Math.round(currRevPerHr) + "), adding " + u.fmtK(Math.abs(rateEffect)) + ".";
+      } else {
+        story += "Revenue per billable hour <b>dropped</b> (€" + Math.round(prevRevPerHr) + " → €" + Math.round(currRevPerHr) + "), costing " + u.fmtK(Math.abs(rateEffect)) + ".";
+      }
+    } else {
+      if (deltaCost > 0) {
+        story += "Staff cost <b>increased by " + u.fmtK(Math.abs(deltaCost)) + "</b>, eating into margin.";
+      } else {
+        story += "Staff cost <b>decreased by " + u.fmtK(Math.abs(deltaCost)) + "</b>, boosting margin.";
+      }
+    }
+
+    // Add secondary driver if significant
+    var second = effects[1];
+    if (second.abs > 500) {
+      if (second.name === "hours") {
+        story += deltaHrs > 0
+          ? " Additionally, <b>" + deltaHrs + " more billable hours</b> helped."
+          : " On top of that, <b>" + Math.abs(deltaHrs) + " fewer billable hours</b> hurt.";
+      } else if (second.name === "rate") {
+        story += rateEffect > 0
+          ? " A higher avg rate also helped (+" + u.fmtK(Math.abs(rateEffect)) + ")."
+          : " A lower avg rate also hurt (" + u.fmtK(rateEffect) + ").";
+      } else {
+        story += deltaCost > 0
+          ? " Rising staff cost also hurt (+" + u.fmtK(Math.abs(deltaCost)) + ")."
+          : " Lower staff cost also helped (" + u.fmtK(Math.abs(deltaCost)) + ").";
+      }
+    }
+
+    // Add top service/person callouts
+    if (svcHoursDelta.length && Math.abs(svcHoursDelta[0].delta) > 5) {
+      var topSvc = svcHoursDelta[0];
+      story += topSvc.delta > 0
+        ? " Biggest service increase: <b>" + topSvc.name + "</b> (+" + Math.round(topSvc.delta) + "h)."
+        : " Biggest service drop: <b>" + topSvc.name + "</b> (" + Math.round(topSvc.delta) + "h).";
+    }
+    if (pplHoursDelta.length && Math.abs(pplHoursDelta[0].delta) > 10) {
+      var topPpl = pplHoursDelta[0];
+      story += topPpl.delta > 0
+        ? " <b>" + topPpl.name + "</b> billed +" + Math.round(topPpl.delta) + "h more"
+        : " <b>" + topPpl.name + "</b> billed " + Math.round(Math.abs(topPpl.delta)) + "h less";
+      // Add the "why" from reasons and service shifts
+      if (topPpl.reasons.length) {
+        story += " (" + topPpl.reasons.join(", ") + ")";
+      }
+      if (topPpl.svcShifts.length) {
+        var topShift = topPpl.svcShifts[0];
+        story += topShift.delta > 0
+          ? " — mainly more <b>" + topShift.name + "</b>"
+          : " — mainly less <b>" + topShift.name + "</b>";
+      }
+      story += ".";
+    }
+
+    // Insert narrative above the chart
+    var narrativeId = containerId + "-narrative";
+    var existingNarrative = document.getElementById(narrativeId);
+    if (existingNarrative) existingNarrative.remove();
+    var narrativeDiv = document.createElement("div");
+    narrativeDiv.id = narrativeId;
+    narrativeDiv.style.cssText = "font-size:13px;color:#374151;line-height:1.6;margin-bottom:12px;padding:10px 14px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0";
+    narrativeDiv.innerHTML = story;
+    el.parentNode.insertBefore(narrativeDiv, el);
+
+    // --- Waterfall chart (simple tooltips) ---
+    var wfData = [
+      {label: prev.month, value: prevMargin, measure: "absolute"},
+      {label: "Billable hrs", value: hoursEffect, measure: "relative"},
+      {label: "Avg rate", value: rateEffect, measure: "relative"},
+      {label: "Staff cost", value: costEffect, measure: "relative"}
+    ];
+    if (Math.abs(residual) > 100) {
+      wfData.push({label: "Mix / other", value: residual, measure: "relative"});
+    }
+    wfData.push({label: curr.month, value: currMargin, measure: "total"});
+
+    d3c.waterfall(containerId, wfData, {
+      yFormat: function(v) { return u.fmtK(v); },
+      yLabel: "Delivery Margin €",
+      height: 280,
+      tooltipFn: function(d) {
+        if (d.measure === "absolute") {
+          return "<div style='font-weight:600'>Starting point: " + u.fmtK(d.value) + "</div>";
+        }
+        if (d.measure === "total") {
+          return "<div style='font-weight:600'>Result: " + u.fmtK(d.value) + "</div>";
+        }
+        var color = d.value >= 0 ? "#059669" : "#dc2626";
+        return "<div style='font-weight:600'>" + d.label + "</div>"
+          + "<div style='font-size:14px;color:" + color + ";font-weight:600'>" + u.fmtK(d.value) + "</div>"
+          + "<div style='font-size:11px;color:#94A3B8;margin-top:2px'>See details below</div>";
+      }
+    });
+
+    // --- Persistent details panel below waterfall ---
+    var detailsEl = document.getElementById("margin-bridge-details");
+    if (!detailsEl) return;
+
+    var S = "style='";
+    var sSection = S + "margin-top:16px;padding:14px 16px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0'";
+    var sHead = S + "font-size:14px;font-weight:600;margin-bottom:8px'";
+    var sSub = S + "font-size:13px;color:#5F6B7A;margin-bottom:10px;line-height:1.5'";
+    var sGrid = S + "display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px'";
+
+    var html = "<div " + sGrid + ">";
+
+    // --- Column 1: Billable Hours ---
+    var hrsColor = hoursEffect >= 0 ? "#059669" : "#dc2626";
+    html += "<div " + sSection + ">";
+    html += "<div " + sHead + ">Billable Hours <span style='color:" + hrsColor + "'>" + u.fmtK(hoursEffect) + "</span></div>";
+    if (deltaHrs >= 0) {
+      html += "<div " + sSub + ">The team billed <b>" + deltaHrs + " more hours</b>. At €" + Math.round(prevRevPerHr) + "/hr, that added " + u.fmtK(hoursEffect) + " in revenue.</div>";
+    } else {
+      html += "<div " + sSub + ">The team billed <b>" + Math.abs(deltaHrs) + " fewer hours</b>. At €" + Math.round(prevRevPerHr) + "/hr, that's " + u.fmtK(hoursEffect) + " lost.</div>";
+    }
+    if (svcHoursDelta.length) {
+      html += "<div style='font-size:12px;color:#5F6B7A;margin-bottom:6px'><b>By service:</b> " + topContribs(svcHoursDelta, "hrs", false) + "</div>";
+    }
+    if (pplHoursDelta.length) {
+      html += "<div style='font-size:12px;color:#5F6B7A;margin-bottom:4px'><b>By person:</b></div>";
+      html += personDeepDive(pplHoursDelta);
+    }
+    html += "</div>";
+
+    // --- Column 2: Avg Rate ---
+    var rateColor = rateEffect >= 0 ? "#059669" : "#dc2626";
+    html += "<div " + sSection + ">";
+    html += "<div " + sHead + ">Avg Rate <span style='color:" + rateColor + "'>" + u.fmtK(rateEffect) + "</span></div>";
+    if (rateEffect >= 0) {
+      html += "<div " + sSub + ">Revenue per billable hour <b>increased</b> (€" + Math.round(prevRevPerHr) + " → €" + Math.round(currRevPerHr) + ").</div>";
+    } else {
+      html += "<div " + sSub + ">Revenue per billable hour <b>dropped</b> (€" + Math.round(prevRevPerHr) + " → €" + Math.round(currRevPerHr) + ").</div>";
+    }
+    if (svcRevDelta.length) {
+      html += "<div style='font-size:12px;color:#5F6B7A;margin-bottom:6px'><b>Revenue by service:</b> " + topContribs(svcRevDelta, "€", false) + "</div>";
+    }
+    var rateDD = personRateDeepDive();
+    if (rateDD) {
+      html += "<div style='font-size:12px;color:#5F6B7A;margin-bottom:4px'><b>By person:</b></div>";
+      html += rateDD;
+    }
+    html += "</div>";
+
+    // --- Column 3: Staff Cost ---
+    var costColor = costEffect >= 0 ? "#059669" : "#dc2626";
+    html += "<div " + sSection + ">";
+    html += "<div " + sHead + ">Staff Cost <span style='color:" + costColor + "'>" + u.fmtK(costEffect) + "</span></div>";
+    if (deltaCost > 0) {
+      html += "<div " + sSub + ">People cost <b>increased</b> from " + u.fmtK(prev.staff_cost) + " to " + u.fmtK(curr.staff_cost) + ".</div>";
+    } else {
+      html += "<div " + sSub + ">People cost <b>decreased</b> from " + u.fmtK(prev.staff_cost) + " to " + u.fmtK(curr.staff_cost) + ".</div>";
+    }
+    if (pplCostDelta.length) {
+      html += "<div style='font-size:12px;color:#5F6B7A;margin-bottom:4px'><b>By person:</b></div>";
+      html += personCostDeepDive(pplCostDelta);
+    }
+    html += "</div>";
+
+    html += "</div>"; // close grid
+    detailsEl.innerHTML = html;
+  }
+
+  function onMarginBarClick(d) {
+    if (!_marginData) return;
+    var idx = -1;
+    for (var i = 0; i < _marginData.length; i++) {
+      if (_marginData[i].month === d.month) { idx = i; break; }
+    }
+    if (idx <= 0) return;  // no previous month to compare
+
+    var wrapper = document.getElementById("margin-bridge-wrapper");
+    var title = document.getElementById("margin-bridge-title");
+    if (wrapper) wrapper.style.display = "block";
+    if (title) title.textContent = _marginData[idx - 1].month + " → " + d.month;
+    buildMarginBridge("chart-fin-margin-bridge", _marginData[idx], _marginData[idx - 1]);
+    wrapper.scrollIntoView({behavior: "smooth", block: "nearest"});
+  }
+
   function buildFinancialMargin(containerId, data) {
+    _marginData = data;  // store for click handler
     var many = data.length > 6;
     var months = data.map(function(r){ return r.month; });
     var budgetData = u.getBudgetForMonths(months);
 
+    // Pre-compute margin drivers
+    data.forEach(function(r, i) {
+      r._drivers = computeMarginDrivers(r, i > 0 ? data[i - 1] : null);
+    });
+
     var chartData = data.map(function(r, i) {
       var row = {
         month: r.month,
-        margin_pct: r.margin_pct
+        margin_pct: r.margin_pct,
+        _drivers: r._drivers,
+        _prevMonth: i > 0 ? data[i - 1].month : null
       };
       var b = budgetData[i];
       row.budget_margin = (b && b.budget_margin_pct != null) ? b.budget_margin_pct : null;
@@ -86,6 +724,7 @@
         colorFn: function(d) { return d.margin_pct >= 0 ? "#059669" : "#dc2626"; }
       },
       tooltipFn: function(d) {
+        var dr = d._drivers || {};
         var lines = [
           "<div style='font-weight:600;margin-bottom:4px'>" + d.month + "</div>",
           "<div style='display:grid;grid-template-columns:auto auto;gap:2px 12px;color:#5F6B7A'>",
@@ -95,8 +734,45 @@
           lines.push("<span>Budget</span><span style='font-weight:500'>" + d.budget_margin.toFixed(1) + "%</span>");
         }
         lines.push("</div>");
+
+        // Drivers section
+        if (d._prevMonth) {
+          lines.push("<hr style='border:none;border-top:1px solid #E2E8F0;margin:6px 0'>");
+          lines.push("<div style='font-size:11px;color:#94A3B8;margin-bottom:3px'>vs " + d._prevMonth + "</div>");
+          lines.push("<div style='display:grid;grid-template-columns:auto auto;gap:2px 12px;color:#5F6B7A;font-size:12px'>");
+          var deltas = [
+            driverDelta("Utilisation", dr.util, dr.prevUtil, "%", true),
+            driverDelta("Avg rate", dr.revPerHr, dr.prevRevPerHr, "€", true),
+            driverDelta("Avg cost", dr.cost, dr.prevCost, "€", false),
+            driverDelta("Revenue", dr.revenue, dr.prevRevenue, "€", true)
+          ];
+          deltas.forEach(function(dd) { if (dd) lines.push(dd); });
+          lines.push("</div>");
+        }
+
+        // Top service & client
+        if (dr.topSvc || dr.topCli) {
+          lines.push("<hr style='border:none;border-top:1px solid #E2E8F0;margin:6px 0'>");
+          lines.push("<div style='display:grid;grid-template-columns:auto auto;gap:2px 12px;color:#5F6B7A;font-size:12px'>");
+          if (dr.topSvc) {
+            lines.push("<span>Top service</span><span style='font-weight:500'>" + dr.topSvc + " (" + dr.topSvcPct + "%)</span>");
+          }
+          if (dr.topCli) {
+            lines.push("<span>Top client</span><span style='font-weight:500'>" + dr.topCli + " (" + dr.topCliPct + "%)</span>");
+          }
+          lines.push("</div>");
+        }
+
+        // Navigation links
+        lines.push("<div style='margin-top:6px;font-size:11px;pointer-events:auto'>");
+        lines.push("<a onclick=\"showSection('people',document.querySelector('[data-section=people]'))\" style='pointer-events:auto;cursor:pointer;color:#2563EB;text-decoration:underline'>People</a>");
+        lines.push(" · <a onclick=\"showSection('service',document.querySelector('[data-section=service]'))\" style='pointer-events:auto;cursor:pointer;color:#2563EB;text-decoration:underline'>Service</a>");
+        lines.push(" · <a onclick=\"showSection('client',document.querySelector('[data-section=client]'))\" style='pointer-events:auto;cursor:pointer;color:#2563EB;text-decoration:underline'>Client</a>");
+        lines.push("</div>");
+
         return lines.join("");
       },
+      onClick: onMarginBarClick,
       yFormat: function(d) { return d.toFixed(0) + "%"; },
       yLabel: "Delivery Margin %",
       margin: {top: 16, right: 40, bottom: 50, left: 60},
@@ -388,7 +1064,11 @@
     u.setKPIs("kpi-financial-rec", finKPIs);
     buildFinancialRevenue("chart-fin-revenue", finDataComplete);
     buildFinancialMargin("chart-fin-margin", finDataComplete);
+    buildMarginDriversHeatmap("chart-fin-margin-drivers", finDataComplete);
 
+    // Hide bridge until a bar is clicked
+    var bridgeWrapper = document.getElementById("margin-bridge-wrapper");
+    if (bridgeWrapper) bridgeWrapper.style.display = "none";
 
     // (Invoiced tab removed)
 

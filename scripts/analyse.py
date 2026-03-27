@@ -2360,6 +2360,18 @@ def get_dashboard_data(te: pd.DataFrame, deals: pd.DataFrame) -> dict[str, list[
     ).reset_index()
     deal_monthly["month"] = deal_monthly["month"].astype(str)
 
+    # --- Person × service type × month (for margin bridge drill-down) ---
+    _psm_cols = ["person_name", "service_type", "month"]
+    _psm_te = te[te["service_type"].notna() & (te["service_type"] != "")]
+    person_svc_monthly = _psm_te.groupby(_psm_cols).agg(
+        hours=("hours", "sum"),
+        billable_hours=("billable_hours", "sum"),
+    ).reset_index()
+    person_svc_monthly["month"] = person_svc_monthly["month"].astype(str)
+    person_svc_monthly["non_billable_hours"] = (
+        person_svc_monthly["hours"] - person_svc_monthly["billable_hours"]
+    ).round(2)
+
     # Recompute client derived fields with final revenue
     clients["gross_margin"] = clients["revenue"] - clients["staff_cost"]
     clients["margin_pct"] = (
@@ -2571,6 +2583,7 @@ def get_dashboard_data(te: pd.DataFrame, deals: pd.DataFrame) -> dict[str, list[
         "wrong_unit_services": wrong_unit_services,
         "wrong_billing_services": wrong_billing_services,
         "deal_monthly": to_records(deal_monthly),
+        "person_svc_monthly": to_records(person_svc_monthly),
     }
 
 

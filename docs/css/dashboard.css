@@ -61,7 +61,7 @@ section h2{font-size:16px;font-weight:600;margin-bottom:12px;color:var(--text-pr
 .chart-full{grid-column:1 / -1}
 
 /* Chart cards */
-.chart-card{background:var(--surface);border-radius:var(--radius);padding:12px 14px;border:1px solid var(--border);min-width:0;overflow:hidden;position:relative}
+.chart-card{background:var(--surface);border-radius:var(--radius);padding:12px 14px;border:1px solid var(--border);min-width:0;overflow:visible;position:relative}
 .chart-card-header{font-size:13px;font-weight:600;color:var(--text-primary);margin-bottom:4px}
 .chart-toggle{position:absolute;top:10px;right:12px;width:26px;height:26px;border-radius:4px;border:1px solid var(--border);background:transparent;cursor:pointer;color:var(--text-secondary);display:flex;align-items:center;justify-content:center;padding:0;transition:all .15s;z-index:2}
 .chart-toggle:hover{color:var(--text-primary);background:var(--surface-hover);border-color:#CBD2DA}
@@ -219,12 +219,21 @@ section h2{font-size:16px;font-weight:600;margin-bottom:12px;color:var(--text-pr
 /* === MOBILE SIDEBAR TOGGLE === */
 .sidebar-toggle{display:none}
 .sidebar-overlay{display:none}
+.sidebar-close{display:none}
+
+/* Filter bar collapse (mobile only — on desktop content is always visible) */
+.filter-bar-summary{display:none}
+.filter-bar-content{display:contents}
 
 /* === TABLET BREAKPOINT === */
 @media(max-width:768px){
   /* Sidebar: slide off-screen, overlay when open */
   .sidebar{transform:translateX(-100%);transition:transform .25s ease;z-index:1000}
   .sidebar.open{transform:translateX(0);box-shadow:4px 0 24px rgba(0,0,0,.3)}
+
+  /* Sidebar close button */
+  .sidebar-close{display:block;position:absolute;top:12px;right:12px;background:none;border:none;color:rgba(255,255,255,.6);font-size:24px;cursor:pointer;padding:4px 8px;line-height:1}
+  .sidebar-close:hover{color:#fff}
 
   /* Overlay backdrop */
   .sidebar-overlay{display:block;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:999;opacity:0;pointer-events:none;transition:opacity .25s ease}
@@ -258,10 +267,22 @@ section h2{font-size:16px;font-weight:600;margin-bottom:12px;color:var(--text-pr
   .forecast-kpis>.fc-kpi:nth-child(even){border-left:1px solid var(--border)}
   .fc-kpi-value{font-size:20px}
 
-  /* Filter bar: stack */
-  .filter-bar{flex-direction:column;align-items:stretch;gap:8px}
-  .filter-bar label{margin-bottom:-4px}
-  .section-filters{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  /* Filter bar: collapsible on mobile */
+  .filter-bar-summary{display:flex;align-items:center;justify-content:space-between;width:100%;cursor:pointer;padding:4px 0;font-size:13px;font-weight:600;color:var(--text-primary)}
+  .filter-bar-chevron{font-size:10px;color:var(--text-muted);transition:transform .2s}
+  .filter-bar.open .filter-bar-chevron{transform:rotate(180deg)}
+  .filter-bar-content{display:none;flex-direction:column;align-items:stretch;gap:8px;width:100%;padding-top:8px}
+  .filter-bar.open .filter-bar-content{display:flex}
+  #global-filters{flex-direction:column;align-items:stretch;gap:0}
+  #global-filters label{margin-bottom:-4px}
+  /* Section filter bars (Teams, etc.) — compact horizontal scroll */
+  .section-filters{display:flex;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;gap:2px}
+  .filter-check{white-space:nowrap;font-size:11px;padding:6px 6px}
+
+  /* Section-level filter bars: horizontal layout */
+  #section-people .filter-bar,
+  #section-client .filter-bar,
+  #section-hygiene .filter-bar{flex-direction:row;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:8px 12px;gap:6px}
 
   /* Tab bar: horizontal scroll */
   .tab-bar{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;flex-wrap:nowrap}
@@ -276,6 +297,37 @@ section h2{font-size:16px;font-weight:600;margin-bottom:12px;color:var(--text-pr
 
   /* Tables */
   .pnl-table td:first-child,.pnl-table th:first-child{min-width:140px}
+
+  /* Heatmap: hide cell text labels, keep color */
+  .hm-text{display:none}
+
+  /* X-axis labels: show every 3rd tick to prevent overlap */
+  .d3-x-axis .tick text{display:none}
+  .d3-x-axis .tick:nth-child(3n+1) text{display:block}
+
+  /* Hide Accounting Revenue tab on mobile */
+  #fin-tabs .tab-btn:nth-child(2){display:none}
+  #fin-tab-budget{display:none !important}
+
+  /* Tables → stacked cards on mobile */
+  .chart-card table thead{display:none}
+  .chart-card table,.chart-card table tbody{display:block;width:100%}
+  .chart-card table tr{display:block;padding:10px 0;border-bottom:1px solid var(--border)}
+  .chart-card table td{display:block;padding:2px 6px;text-align:left !important;white-space:normal !important;max-width:none !important;overflow:visible !important}
+  .chart-card table td:first-child{font-weight:600;font-size:13px;padding-top:0}
+
+  #billability-person-list table thead{display:none}
+  #billability-person-list table,#billability-person-list table tbody{display:block;width:100%}
+  #billability-person-list table tr{display:flex;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid var(--border);gap:0 12px;align-items:baseline}
+  #billability-person-list table td{display:inline;padding:2px 0;white-space:nowrap;text-align:left !important}
+  #billability-person-list table td:first-child{width:100%;font-size:13px}
+
+  #billability-detail-table{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .exec-alert-table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+  /* Export buttons: stack */
+  .export-row{flex-direction:column}
+  .csv-btn{width:100%}
 
   /* Forecast sliders */
   .forecast-sliders{flex-direction:column}

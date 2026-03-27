@@ -150,6 +150,11 @@
     axisG.selectAll(".tick text").attr("fill", LABEL_COLOR).attr("font-size", "10px").attr("font-family", FONT);
   }
 
+  function styleXAxis(axisG) {
+    styleAxis(axisG);
+    axisG.classed("d3-x-axis", true);
+  }
+
   function addRefLine(g, x, y1, y2, opts) {
     g.append("line")
       .attr("x1", x).attr("x2", x)
@@ -241,11 +246,13 @@
     opts = opts || {};
     var yField = opts.yField || "label";
     var xField = opts.xField || "value";
+    var isMobile = window.innerWidth <= 768;
     var margin = opts.margin || {top: 24, right: 70, bottom: 36, left: 150};
+    if (isMobile) { margin = {top: 16, right: 40, bottom: 28, left: 10}; }
     var barH = opts.barHeight || 32;
-    var barGap = 8;
+    var barGap = isMobile ? 20 : 8;
     var animate = opts.animate !== false;
-    var maxLabel = opts.maxLabelLen || 22;
+    var maxLabel = isMobile ? 0 : (opts.maxLabelLen || 22);
 
     var height = margin.top + margin.bottom + data.length * (barH + barGap);
     var ctx = createSvg(containerId, margin, height);
@@ -391,7 +398,7 @@
         .attr("dy", "0.35em")
         .attr("text-anchor", function(d){ return d[xField] < 0 ? "end" : "start"; })
         .attr("fill", function(d){ return labelColorFn(d); })
-        .attr("font-size", "12px").attr("font-weight", "600")
+        .attr("font-size", isMobile ? "10px" : "12px").attr("font-weight", "600")
         .attr("font-family", FONT)
         .attr("opacity", 0)
         .text(function(d){ return labelFn(d); })
@@ -401,16 +408,29 @@
         .attr("opacity", 1);
 
     // Y-axis labels
-    g.selectAll(".y-label")
-      .data(data)
-      .enter().append("text")
-        .attr("x", -8)
-        .attr("y", function(d){ return y(d[yField]) + y.bandwidth()/2; })
-        .attr("dy", "0.35em")
-        .attr("text-anchor", "end")
-        .attr("fill", LABEL_COLOR).attr("font-size", "11px").attr("font-family", FONT)
-        .text(function(d){ return truncate(d[yField], maxLabel); })
-        .append("title").text(function(d){ return d[yField]; });
+    if (isMobile) {
+      // On mobile: label above each bar, left-aligned
+      g.selectAll(".y-label")
+        .data(data)
+        .enter().append("text")
+          .attr("x", 0)
+          .attr("y", function(d){ return y(d[yField]) - 2; })
+          .attr("text-anchor", "start")
+          .attr("fill", LABEL_COLOR).attr("font-size", "9px").attr("font-family", FONT)
+          .text(function(d){ return truncate(d[yField], 30); })
+          .append("title").text(function(d){ return d[yField]; });
+    } else {
+      g.selectAll(".y-label")
+        .data(data)
+        .enter().append("text")
+          .attr("x", -8)
+          .attr("y", function(d){ return y(d[yField]) + y.bandwidth()/2; })
+          .attr("dy", "0.35em")
+          .attr("text-anchor", "end")
+          .attr("fill", LABEL_COLOR).attr("font-size", "11px").attr("font-family", FONT)
+          .text(function(d){ return truncate(d[yField], maxLabel); })
+          .append("title").text(function(d){ return d[yField]; });
+    }
 
     // X-axis
     var xAxis = d3.axisBottom(x).ticks(6);
@@ -418,7 +438,7 @@
     g.append("g")
       .attr("transform", "translate(0," + innerH + ")")
       .call(xAxis)
-      .call(styleAxis);
+      .call(styleXAxis);
 
     if (opts.xLabel) {
       g.append("text")
@@ -551,7 +571,7 @@
     // X-axis
     var xAxis = d3.axisBottom(x).ticks(6);
     if (opts.xFormat) xAxis.tickFormat(opts.xFormat);
-    g.append("g").attr("transform", "translate(0," + innerH + ")").call(xAxis).call(styleAxis);
+    g.append("g").attr("transform", "translate(0," + innerH + ")").call(xAxis).call(styleXAxis);
 
     if (opts.xLabel) {
       g.append("text").attr("x", innerW/2).attr("y", innerH + 30)
@@ -763,7 +783,9 @@
               d3.select(this).transition().duration(200).attr("fill-opacity", sr.opacity || 0.7)
                 .style("filter", "none");
               tooltip.style("opacity", 0);
-            });
+            })
+            .on("click", function(event, bd) { if (opts.onClick) opts.onClick(bd.d); })
+            .style("cursor", opts.onClick ? "pointer" : "default");
         });
     });
 
@@ -816,7 +838,7 @@
     // Axes
     var xAxisGen = d3.axisBottom(x0);
     if (opts.xFormat) xAxisGen.tickFormat(opts.xFormat);
-    g.append("g").attr("transform", "translate(0," + innerH + ")").call(xAxisGen).call(styleAxis)
+    g.append("g").attr("transform", "translate(0," + innerH + ")").call(xAxisGen).call(styleXAxis)
       .selectAll("text").attr("transform", data.length > 8 ? "rotate(-40)" : "").style("text-anchor", data.length > 8 ? "end" : "middle");
 
     var yAxisGen = d3.axisLeft(yScale).ticks(5);
@@ -985,7 +1007,7 @@
     // Axes
     var xAxisGen = d3.axisBottom(x);
     if (opts.xFormat) xAxisGen.tickFormat(opts.xFormat);
-    g.append("g").attr("transform", "translate(0," + innerH + ")").call(xAxisGen).call(styleAxis)
+    g.append("g").attr("transform", "translate(0," + innerH + ")").call(xAxisGen).call(styleXAxis)
       .selectAll("text").attr("transform", categories.length > 8 ? "rotate(-40)" : "").style("text-anchor", categories.length > 8 ? "end" : "middle");
 
     var yAxisGen = d3.axisLeft(yScale).ticks(5);
@@ -1137,7 +1159,7 @@
 
     // Axes
     g.append("g").attr("transform", "translate(0," + innerH + ")")
-      .call(d3.axisBottom(x)).call(styleAxis);
+      .call(d3.axisBottom(x)).call(styleXAxis);
     var yAxisGen = d3.axisLeft(yScale).ticks(5);
     if (opts.yFormat) yAxisGen.tickFormat(opts.yFormat);
     g.append("g").call(yAxisGen).call(styleAxis);
@@ -1246,6 +1268,7 @@
     g.selectAll(".hm-text")
       .data(cells.filter(function(d){ return d.text; }))
       .enter().append("text")
+        .attr("class", "hm-text")
         .attr("x", function(d){ return x(d.xLabel) + x.bandwidth()/2; })
         .attr("y", function(d){ return y(d.yLabel) + y.bandwidth()/2; })
         .attr("dy", "0.35em").attr("text-anchor", "middle")
@@ -1266,7 +1289,7 @@
 
     // X-axis
     g.append("g").attr("transform", "translate(0," + innerH + ")")
-      .call(d3.axisBottom(x)).call(styleAxis)
+      .call(d3.axisBottom(x)).call(styleXAxis)
       .selectAll("text").attr("transform", xLabels.length > 8 ? "rotate(-40)" : "")
       .style("text-anchor", xLabels.length > 8 ? "end" : "middle");
 
@@ -1468,7 +1491,7 @@
     // Axes
     var xAxisGen = d3.axisBottom(xScale).ticks(6);
     if (opts.xFormat) xAxisGen.tickFormat(opts.xFormat);
-    g.append("g").attr("transform", "translate(0," + innerH + ")").call(xAxisGen).call(styleAxis);
+    g.append("g").attr("transform", "translate(0," + innerH + ")").call(xAxisGen).call(styleXAxis);
 
     var yAxisGen = d3.axisLeft(yScale).ticks(6);
     if (opts.yFormat) yAxisGen.tickFormat(opts.yFormat);
@@ -1601,7 +1624,7 @@
         var idx = Math.round(i);
         return paretoData[idx] ? truncate(paretoData[idx][labelField], 12) : "";
       }))
-      .call(styleAxis)
+      .call(styleXAxis)
       .selectAll("text").attr("transform", "rotate(-40)").style("text-anchor", "end");
 
     g.append("g").call(d3.axisLeft(yScale).ticks(5).tickFormat(function(d){ return Math.round(d*100) + "%"; }))
