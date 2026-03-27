@@ -167,50 +167,129 @@
     if (!A || !B) return;
     var n = countActualMonths();
 
+    // --- Operational Revenue (service only, excl. commission) ---
+    var opsRevActual = sumArr(A.service_rev, 0, n);
+    var opsRevBudgetYTD = sumArr(B.service_rev, 0, n);
+    var opsRevVarPct = opsRevBudgetYTD > 0 ? (opsRevActual - opsRevBudgetYTD) / opsRevBudgetYTD * 100 : null;
+
+    // --- Delivery Margin % = (service_rev - |people_cost|) / service_rev ---
+    var peopleCostActual = Math.abs(sumArr(A.people_cost, 0, n));
+    var deliveryMarginPct = opsRevActual > 0 ? (opsRevActual - peopleCostActual) / opsRevActual * 100 : 0;
+    var peopleCostBudget = Math.abs(sumArr(B.people_cost, 0, n));
+    var deliveryMarginBudget = opsRevBudgetYTD > 0 ? (opsRevBudgetYTD - peopleCostBudget) / opsRevBudgetYTD * 100 : 0;
+    var deliveryMarginDelta = deliveryMarginPct - deliveryMarginBudget;
+
+    // --- HubSpot Commission: actual vs forecast ---
+    var commActual = sumArr(A.other_rev, 0, n);
+    var commBudgetYTD = B.commission ? sumArr(B.commission, 0, n) : sumArr(B.other_rev, 0, n);
+    var commVarPct = commBudgetYTD > 0 ? (commActual - commBudgetYTD) / commBudgetYTD * 100 : null;
+
+    // --- Total Revenue (service + commission) ---
     var revActual = sumArr(A.turnover, 0, n);
     var revBudgetYTD = sumArr(B.turnover, 0, n);
     var revVarPct = revBudgetYTD > 0 ? (revActual - revBudgetYTD) / revBudgetYTD * 100 : null;
 
-    var gpActual = sumArr(A.gross_profit, 0, n);
-    var gpBudgetYTD = sumArr(B.gross_profit, 0, n);
-    var gpVarPct = gpBudgetYTD > 0 ? (gpActual - gpBudgetYTD) / gpBudgetYTD * 100 : null;
-
+    // --- EBITDA ---
     var ebitdaActual = sumArr(A.reported_ebitda, 0, n);
     var ebitdaBudgetYTD = sumArr(B.reported_ebitda, 0, n);
     var ebitdaVarPct = ebitdaBudgetYTD > 0 ? (ebitdaActual - ebitdaBudgetYTD) / ebitdaBudgetYTD * 100 : null;
 
     // FY forecasts — use slider override if provided
-    var fyRevForecast, fyEbitdaForecast;
+    var fyRevForecast, fyEbitdaForecast, fyOpsRevForecast, fyPeopleCostForecast;
+    var commFc = getForecast("other_rev");
+    var costFc = getForecast("people_cost");
+    var opexFc = getForecast("total_opex");
     if (overrideSvcRev != null) {
-      var commFc = getForecast("other_rev");
-      var costFc = getForecast("people_cost");
-      var opexFc = getForecast("total_opex");
       fyRevForecast = sumArr(A.turnover, 0, n);
       fyEbitdaForecast = sumArr(A.reported_ebitda, 0, n);
+      fyOpsRevForecast = sumArr(A.service_rev, 0, n);
+      fyPeopleCostForecast = Math.abs(sumArr(A.people_cost, 0, n));
       for (var i = n; i < 12; i++) {
         var turnover_i = overrideSvcRev + commFc[i];
         fyRevForecast += turnover_i;
         fyEbitdaForecast += turnover_i + costFc[i] + opexFc[i]; // costs are negative
+        fyOpsRevForecast += overrideSvcRev;
+        fyPeopleCostForecast += Math.abs(costFc[i]);
       }
     } else {
       fyRevForecast = sumArr(getForecast("turnover"), 0, 12);
       fyEbitdaForecast = sumArr(getForecast("reported_ebitda"), 0, 12);
+      fyOpsRevForecast = sumArr(getForecast("service_rev"), 0, 12);
+      fyPeopleCostForecast = Math.abs(sumArr(getForecast("people_cost"), 0, 12));
     }
     var fyRevBudget = sumArr(B.turnover, 0, 12);
     var fyRevVarPct = fyRevBudget > 0 ? (fyRevForecast - fyRevBudget) / fyRevBudget * 100 : null;
     var fyEbitdaBudget = sumArr(B.reported_ebitda, 0, 12);
     var fyEbitdaVarPct = fyEbitdaBudget > 0 ? (fyEbitdaForecast - fyEbitdaBudget) / fyEbitdaBudget * 100 : null;
 
-    var fyLabel = overrideSvcRev != null ? "FY Revenue (Scenario) " : "FY Revenue Forecast ";
-    var fyELabel = overrideSvcRev != null ? "FY EBITDA (Scenario) " : "FY EBITDA Forecast ";
+    // FY Ops Revenue + Delivery Margin forecasts
+    var fyOpsRevBudget = sumArr(B.service_rev, 0, 12);
+    var fyOpsRevVarPct = fyOpsRevBudget > 0 ? (fyOpsRevForecast - fyOpsRevBudget) / fyOpsRevBudget * 100 : null;
+    var fyDeliveryMarginPct = fyOpsRevForecast > 0 ? (fyOpsRevForecast - fyPeopleCostForecast) / fyOpsRevForecast * 100 : 0;
+    var fyPeopleCostBudget = Math.abs(sumArr(B.people_cost, 0, 12));
+    var fyDeliveryMarginBudget = fyOpsRevBudget > 0 ? (fyOpsRevBudget - fyPeopleCostBudget) / fyOpsRevBudget * 100 : 0;
+    var fyDeliveryMarginDelta = fyDeliveryMarginPct - fyDeliveryMarginBudget;
 
-    u.setKPIs("exec-pnl-kpis", [
-      {label: "YTD Revenue " + infoIcon("Total accounting turnover from Bright Analytics P&L."), value: u.fmtEur(revActual), sub: "Budget: " + u.fmtEur(revBudgetYTD), delta: revVarPct, deltaLabel: "vs budget"},
-      {label: "YTD Gross Profit " + infoIcon("Gross profit: turnover minus people costs and direct costs."), value: u.fmtEur(gpActual), sub: "Budget: " + u.fmtEur(gpBudgetYTD), delta: gpVarPct, deltaLabel: "vs budget"},
-      {label: "YTD EBITDA " + infoIcon("Earnings before interest, taxes, depreciation and amortization."), value: u.fmtEur(ebitdaActual), sub: "Budget: " + u.fmtEur(ebitdaBudgetYTD), delta: ebitdaVarPct, deltaLabel: "vs budget"},
-      {label: fyLabel + infoIcon("Full-year forecast. Use sliders below to model scenarios."), value: u.fmtEur(fyRevForecast), sub: "Budget: " + u.fmtEur(fyRevBudget), delta: fyRevVarPct, deltaLabel: "vs budget"},
-      {label: fyELabel + infoIcon("Full-year EBITDA forecast. Updates with slider scenarios."), value: u.fmtEur(fyEbitdaForecast), sub: "Budget: " + u.fmtEur(fyEbitdaBudget), delta: fyEbitdaVarPct, deltaLabel: "vs budget"}
-    ]);
+    var scenarioTag = overrideSvcRev != null ? " (Scenario)" : "";
+
+    // --- Profit Margin % (EBITDA as % of total revenue) ---
+    var profitMarginPct = revActual > 0 ? ebitdaActual / revActual * 100 : 0;
+    var profitMarginBudget = revBudgetYTD > 0 ? ebitdaBudgetYTD / revBudgetYTD * 100 : 0;
+    var profitMarginDelta = profitMarginPct - profitMarginBudget;
+
+    // --- FY Profit Margin % ---
+    var fyProfitMarginPct = fyRevForecast > 0 ? fyEbitdaForecast / fyRevForecast * 100 : 0;
+    var fyProfitMarginBudget = fyRevBudget > 0 ? fyEbitdaBudget / fyRevBudget * 100 : 0;
+    var fyProfitMarginDelta = fyProfitMarginPct - fyProfitMarginBudget;
+
+    // --- HubSpot Commission delta color ---
+    var commDColor = u.deltaColor(commVarPct);
+    var commDSign = commVarPct > 0 ? "+" : "";
+    var commDText = commVarPct !== null ? commDSign + commVarPct.toFixed(1) + "%" : "";
+
+    // Build KPI strip
+    var el = document.getElementById("exec-pnl-kpis");
+    if (!el) return;
+
+    el.innerHTML =
+      // --- Row 1: Total ---
+      '<div class="kpi-strip-label">Total (incl. commission)</div>' +
+      '<div class="kpi-strip-row">' +
+        kpiCard("Revenue " + infoIcon("Total accounting turnover: service revenue + HubSpot commission."), u.fmtEur(revActual), "Budget: " + u.fmtEur(revBudgetYTD), revVarPct, "vs budget") +
+        kpiCard("Profit Margin " + infoIcon("EBITDA as % of total revenue."), profitMarginPct.toFixed(1) + "%", "Budget: " + profitMarginBudget.toFixed(1) + "%", profitMarginDelta, "pp vs budget", false, "pp") +
+        kpiCard("FY Revenue" + scenarioTag + " " + infoIcon("Full-year revenue forecast. Use Playground to model scenarios."), u.fmtEur(fyRevForecast), "Budget: " + u.fmtEur(fyRevBudget), fyRevVarPct, "vs budget") +
+        kpiCard("FY Profit Margin" + scenarioTag + " " + infoIcon("Full-year EBITDA margin forecast."), fyProfitMarginPct.toFixed(1) + "%", "Budget: " + fyProfitMarginBudget.toFixed(1) + "%", fyProfitMarginDelta, "pp vs budget", false, "pp") +
+      '</div>' +
+      // --- Row 2: Delivery ---
+      '<div class="kpi-strip-label">Delivery (service revenue only)</div>' +
+      '<div class="kpi-strip-row">' +
+        kpiCard("Ops Revenue " + infoIcon("Service revenue only, excl. HubSpot commission."), u.fmtEur(opsRevActual), "Budget: " + u.fmtEur(opsRevBudgetYTD), opsRevVarPct, "vs budget") +
+        kpiCard("Delivery Margin " + infoIcon("(Service rev \u2212 people cost) / service rev. On worked hours only."), deliveryMarginPct.toFixed(1) + "%", "Budget: " + deliveryMarginBudget.toFixed(1) + "%", deliveryMarginDelta, "pp vs budget", false, "pp") +
+        kpiCard("FY Ops Revenue" + scenarioTag + " " + infoIcon("Full-year service revenue forecast."), u.fmtEur(fyOpsRevForecast), "Budget: " + u.fmtEur(fyOpsRevBudget), fyOpsRevVarPct, "vs budget") +
+        kpiCard("FY Delivery Margin" + scenarioTag + " " + infoIcon("Full-year delivery margin forecast."), fyDeliveryMarginPct.toFixed(1) + "%", "Budget: " + fyDeliveryMarginBudget.toFixed(1) + "%", fyDeliveryMarginDelta, "pp vs budget", false, "pp") +
+      '</div>' +
+      // --- HubSpot Commission inline ---
+      '<div class="kpi-commission-inline">' +
+        '<span class="comm-label">HubSpot Commission</span>' +
+        '<span class="comm-value">' + u.fmtEur(commActual) + '</span>' +
+        '<span class="comm-sub">Forecast: ' + u.fmtEur(commBudgetYTD) + '</span>' +
+        (commDText ? '<span class="comm-delta" style="color:' + commDColor + '">' + commDText + ' vs forecast</span>' : '') +
+      '</div>';
+  }
+
+  // Helper to build a single KPI card HTML
+  function kpiCard(label, value, sub, delta, deltaLabel, isMajor, deltaSuffix) {
+    var dColor = u.deltaColor(delta);
+    var dSign = delta > 0 ? "+" : "";
+    var suffix = deltaSuffix || "%";
+    var dText = delta !== null && delta !== undefined ? dSign + delta.toFixed(1) + suffix : "";
+    var majorCls = isMajor ? " kpi-item-major" : "";
+    return '<div class="kpi-item' + majorCls + '">' +
+      '<div class="kpi-label">' + label + '</div>' +
+      '<div class="kpi-value">' + value + '</div>' +
+      '<div class="kpi-sub">' + sub + '</div>' +
+      (dText ? '<div class="kpi-delta" style="color:' + dColor + '">' + dText + ' <span class="kpi-delta-label">' + (deltaLabel || "") + '</span></div>' : '') +
+    '</div>';
   }
 
   // === BUILD P&L CHART ===
@@ -425,6 +504,7 @@
     }
 
     var nearBudget = (DATA.overbudget || []).filter(function(d) {
+      if (d.delivered_on) return false;  // only open budgets
       var pct = d.hours_burn_pct || 0;
       if (pct < 85 || pct >= 95) return false;
       if ((d.budgeted_hours || 0) <= 2 || (d.worked_hours || 0) <= 0) return false;
@@ -467,17 +547,31 @@
       content.style.display = "block";
       content.innerHTML = '<span style="color:var(--text-muted)">Analyzing your metrics...</span>';
       var prompt = "You are a CFO-level analyst for LeadStreet, a HubSpot agency. Write a 3-4 sentence executive briefing for the CEO based on these YTD metrics. Focus on what matters most and one clear action.\n\nMetrics:\n" + JSON.stringify(kpiContext, null, 2);
-      fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: prompt, conversation: [] }) })
+      var isLocal = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+      var endpoint = isLocal ? "/api/chat" : "https://leadstreet-recap.labarbemanu.workers.dev";
+      var payload = isLocal ? { question: prompt, conversation: [] } : { prompt: prompt };
+      fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
       .then(function(r) { if (!r.ok) throw new Error("err"); return r.json(); })
       .then(function(data) { content.innerHTML = data.answer || "No response."; btn.textContent = "Regenerate Recap"; btn.disabled = false; })
-      .catch(function() { content.innerHTML = '<span class="exec-recap-error">Chat server not available. Start with: <code>python3 scripts/chat_server.py</code></span>'; btn.textContent = "Generate Executive Recap"; btn.disabled = false; });
+      .catch(function() { content.innerHTML = '<span class="exec-recap-error">Recap service unavailable. Please try again later.</span>'; btn.textContent = "Generate Executive Recap"; btn.disabled = false; });
     });
+  }
+
+  // === PLAYGROUND TOGGLE ===
+  function togglePlayground() {
+    var panel = document.getElementById("exec-playground-panel");
+    var btn = document.getElementById("exec-playground-toggle");
+    if (!panel) return;
+    var isOpen = panel.style.display !== "none";
+    panel.style.display = isOpen ? "none" : "flex";
+    if (btn) btn.classList.toggle("open", !isOpen);
   }
 
   // Expose globals
   window.setBudgetScenario = setBudgetScenario;
   window.updateExecSliders = updateExecSliders;
   window.resetExecSliders = resetExecSliders;
+  window.togglePlayground = togglePlayground;
 
   // === REGISTER SECTION ===
   D.registerSection("executive", function(f) {

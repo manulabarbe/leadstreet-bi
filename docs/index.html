@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/dashboard.css?v=1774599343">
+<link rel="stylesheet" href="css/dashboard.css?v=1774600792">
 <script src="https://d3js.org/d3.v7.min.js"></script>
 </head>
 <body>
@@ -26,8 +26,8 @@
 
   <!-- Global filter bar -->
   <div class="filter-bar" id="global-filters">
-    <label>From</label><input type="month" id="start-month" value="2024-12" min="2024-12" max="2026-03" onchange="applyFilters()">
-    <label>To</label><input type="month" id="end-month" value="2026-03" min="2024-12" max="2026-03" onchange="applyFilters()">
+    <label>From</label><input type="month" id="start-month" value="2025-01" min="2025-01" max="2026-03" onchange="applyFilters()">
+    <label>To</label><input type="month" id="end-month" value="2026-03" min="2025-01" max="2026-03" onchange="applyFilters()">
     <button class="preset-btn" onclick="setPreset('ytd')">YTD</button>
     <button class="preset-btn" onclick="setPreset('3m')">3M</button>
     <button class="preset-btn" onclick="setPreset('6m')">6M</button>
@@ -42,27 +42,32 @@
     <h2 style="display:flex;align-items:center;gap:12px">Executive Summary &mdash; 2026 <span style="font-size:11px;color:#94A3B8;font-weight:normal;margin-left:8px">YTD excl. current month</span></h2>
 
     <!-- P&L KPIs -->
-    <div class="kpi-strip" id="exec-pnl-kpis"></div>
+    <div id="exec-pnl-kpis" style="margin-bottom:14px"></div>
 
-    <!-- Forecast Sliders: What-if scenarios -->
-    <div class="forecast-sliders" id="exec-forecast-sliders" style="margin-top:4px">
-      <div style="font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;width:100%">What-if Forecast &mdash; adjust to see impact on remaining months</div>
-      <div class="slider-group">
-        <label>Utilisation %</label>
-        <input type="range" id="exec-slider-util" min="30" max="90" step="1" oninput="updateExecSliders()">
-        <div class="slider-val" id="exec-slider-util-val"></div>
+    <!-- Playground toggle + Forecast Sliders -->
+    <div style="margin-top:4px">
+      <button id="exec-playground-toggle" class="playground-toggle" onclick="togglePlayground()">
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><polygon id="playground-arrow" points="0,0 10,5 0,10"/></svg>
+        Playground
+      </button>
+      <div id="exec-playground-panel" class="forecast-sliders" style="display:none;margin-top:4px">
+        <div class="slider-group">
+          <label>Utilisation %</label>
+          <input type="range" id="exec-slider-util" min="30" max="90" step="1" oninput="updateExecSliders()">
+          <div class="slider-val" id="exec-slider-util-val"></div>
+        </div>
+        <div class="slider-group">
+          <label>Avg Billable Rate (&euro;/hr)</label>
+          <input type="range" id="exec-slider-rate" min="50" max="200" step="1" oninput="updateExecSliders()">
+          <div class="slider-val" id="exec-slider-rate-val"></div>
+        </div>
+        <div class="slider-group">
+          <label>Monthly Team Hours</label>
+          <input type="range" id="exec-slider-hours" min="500" max="2500" step="10" oninput="updateExecSliders()">
+          <div class="slider-val" id="exec-slider-hours-val"></div>
+        </div>
+        <button class="slider-reset" onclick="resetExecSliders()">Reset to actuals</button>
       </div>
-      <div class="slider-group">
-        <label>Avg Billable Rate (&euro;/hr)</label>
-        <input type="range" id="exec-slider-rate" min="50" max="200" step="1" oninput="updateExecSliders()">
-        <div class="slider-val" id="exec-slider-rate-val"></div>
-      </div>
-      <div class="slider-group">
-        <label>Monthly Team Hours</label>
-        <input type="range" id="exec-slider-hours" min="500" max="2500" step="10" oninput="updateExecSliders()">
-        <div class="slider-val" id="exec-slider-hours-val"></div>
-      </div>
-      <button class="slider-reset" onclick="resetExecSliders()">Reset to actuals</button>
     </div>
     <div id="exec-slider-narrative" class="forecast-narrative" style="display:none"></div>
 
@@ -358,16 +363,16 @@ var DATA = {"financial_monthly": [{"month": "2024-12", "revenue": 1719.66666531,
 
 <!-- Core + Modules -->
 <script src="js/core.js"></script>
-<script src="js/d3-charts.js?v=1774599343"></script>
-<script src="js/forecast.js?v=1774599343"></script>
-<script src="js/executive.js?v=1774599343"></script>
-<script src="js/pnl-data.js?v=1774599343"></script>
-<script src="js/financial.js?v=1774599343"></script>
-<script src="js/people.js?v=1774599343"></script>
-<script src="js/service.js?v=1774599343"></script>
-<script src="js/client.js?v=1774599343"></script>
-<script src="js/hygiene.js?v=1774599343"></script>
-<script src="js/analysis.js?v=1774599343"></script>
+<script src="js/d3-charts.js?v=1774600792"></script>
+<script src="js/forecast.js?v=1774600792"></script>
+<script src="js/executive.js?v=1774600792"></script>
+<script src="js/pnl-data.js?v=1774600792"></script>
+<script src="js/financial.js?v=1774600792"></script>
+<script src="js/people.js?v=1774600792"></script>
+<script src="js/service.js?v=1774600792"></script>
+<script src="js/client.js?v=1774600792"></script>
+<script src="js/hygiene.js?v=1774600792"></script>
+<script src="js/analysis.js?v=1774600792"></script>
 <script>Dashboard.init();</script>
 </body>
 </html>
